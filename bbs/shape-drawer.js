@@ -467,179 +467,107 @@ function drawRibsAlongSamples(ctx, samples, diam, cfg) {
 /* =====================================================
    SHAPE DIAGRAM RENDERER
    ===================================================== */
+/* =====================================================
+   DATA-DRIVEN SHAPE RENDERER
+   Shapes are defined declaratively in bbs/shapes.json and
+   interpreted here. See window.SHAPE_LIB (loaded at startup).
+   ===================================================== */
+
+// Map a style string to the matching low-level renderer
+function _shapeRenderer(style) {
+  if (style === 'curve')    return (c,p,dd)=>drawRebarPath(c,p,dd,false);
+  if (style === 'straight') return (c,p,dd)=>drawRebarStraightPolyline(c,p,dd,false);
+  return (c,p,dd)=>drawRebarStraight(c,p,dd,false); // 'bend' (default)
+}
+
+// Build a 30-deg isometric projector that auto-centres world points
+function _makeIsoProjector(allWorldPts, cx, cy) {
+  const ISO = Math.PI/6, cosI = Math.cos(ISO), sinI = Math.sin(ISO);
+  const raw = (x,y,z)=>({ x:(x-z)*cosI, y:-y+(x+z)*sinI });
+  const proj = allWorldPts.map(p=>raw(p[0],p[1],p[2]||0));
+  const minX=Math.min(...proj.map(p=>p.x)), maxX=Math.max(...proj.map(p=>p.x));
+  const minY=Math.min(...proj.map(p=>p.y)), maxY=Math.max(...proj.map(p=>p.y));
+  const ox=cx-(minX+maxX)/2, oy=cy-(minY+maxY)/2;
+  return (x,y,z)=>{ const p=raw(x,y,z); return { x:ox+p.x, y:oy+p.y }; };
+}
+
 function drawShapeDiagram(ctx, shapeName, diam, W, H) {
   const d = Math.max(diam||14, 10);
   const cx=W/2, cy=H/2, pad=44;
-  const sw=W-pad*2;
+  const sw=W-pad*2, sh=H-pad*2;
 
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle=GRAY.bg; ctx.fillRect(0,0,W,H);
   window._drawerActiveStyle = window._drawerActiveStyle || 'tor';
 
-  switch (shapeName) {
-    case 'straight': {
-      drawRebarStraightPolyline(ctx,[{x:pad,y:cy},{x:W-pad,y:cy}],d,false);
-      drawDim(ctx,pad,cy-d-12,W-pad,cy-d-12,'L');
-      break;
-    }
-    case 'L': {
-      const x0=pad+10,y0=pad+10,x1=W-pad,y2=H-pad;
-      drawRebarStraight(ctx,[{x:x1,y:y0},{x:x0,y:y0},{x:x0,y:y2}],d,false);
-      drawDim(ctx,x0,y0-d-14,x1,y0-d-14,'A');
-      drawDim(ctx,x0-d-14,y0,x0-d-14,y2,'B');
-      break;
-    }
-    case 'U': {
-      const x0=pad,y0=pad+10,x1=W-pad,yb=H-pad;
-      drawRebarStraight(ctx,[{x:x0,y:y0},{x:x0,y:yb},{x:x1,y:yb},{x:x1,y:y0}],d,false);
-      drawDim(ctx,x0-d-14,y0,x0-d-14,yb,'A');
-      drawDim(ctx,x0,yb+d+14,x1,yb+d+14,'C');
-      drawDim(ctx,x1+d+14,y0,x1+d+14,yb,'B');
-      break;
-    }
-    case 'stirrup': {
-      /* BS 8666 shape 51 — closed rectangular link
-         Rectangle A×B; two free hook ends meet near one corner and
-         turn back DIAGONALLY INWARD (135° hooks) into the loop.
-         L = 2(A+B+C) - 2.5r - 5d
-      */
-      const rx0=pad+34, ry0=pad+26, rx1=W-pad-34, ry1=H-pad-20;
-      const hook=Math.min((rx1-rx0)*0.22,38); // C — hook tail length
+  const lib = window.SHAPE_LIB || {};
+  const def = lib[shapeName];
 
-      /* The link is "open" at the top-right corner: instead of a single
-         closed rectangle, the bar runs:
-         top-left → bottom-left → bottom-right → top-right (end 1 here)
-         then a second pass overlaps so two hook tails sit at the corner. */
-
-      // Main loop body (open path, corner gap at top-right)
-      drawRebarStraight(ctx,[
-        {x:rx1,y:ry0},          // start just left of top-right corner
-        {x:rx0,y:ry0},          // top-left
-        {x:rx0,y:ry1},          // bottom-left
-        {x:rx1,y:ry1},          // bottom-right
-        {x:rx1,y:ry0+hook*0.55} // back up the right side, stopping short
-      ],d,false);
-
-      // Hook end 1 — at the top-right corner, tail turns DOWN-LEFT (135°) into loop
-      drawRebarStraight(ctx,[
-        {x:rx1,y:ry0},
-        {x:rx1-hook*0.7,y:ry0+hook*0.7}   // diagonal inward
-      ],d,false);
-
-      // Hook end 2 — the other free end, slightly offset, also turns inward
-      drawRebarStraight(ctx,[
-        {x:rx1,y:ry0+hook*0.55},
-        {x:rx1-hook*0.7,y:ry0+hook*0.55+hook*0.7}
-      ],d,false);
-
-      // Dimensions
-      drawDim(ctx,rx0,ry0-d-14,rx1,ry0-d-14,'A');
-      drawDim(ctx,rx0-d-16,ry0,rx0-d-16,ry1,'B');
-      drawDim(ctx,rx1+d+10,ry0,rx1-hook*0.7+d+10,ry0+hook*0.7,'C');
-      break;
-    }
-    case 'circle': {
-      const rr=Math.min(sw,H-pad*2)/2-10;
-      const steps=72, cpts=[];
-      for(let i=0;i<steps;i++){const a=i/steps*Math.PI*2; cpts.push({x:cx+Math.cos(a)*rr,y:cy+Math.sin(a)*rr});}
-      drawRebarPath(ctx,cpts,d,true);
-      drawDim(ctx,cx,cy,cx+rr,cy,'⌀');
-      break;
-    }
-    case 'spiral': {
-      const rr=Math.min(sw,H-pad*2)/2-12, turns=3;
-      const spts=[];
-      for(let i=0;i<=turns*72;i++){
-        const t=i/(turns*72), a=t*Math.PI*2*turns;
-        spts.push({x:cx+Math.cos(a)*rr*(0.2+0.8*t), y:cy+Math.sin(a)*rr*(0.2+0.8*t)});
-      }
-      ctx.save();
-      ctx.lineCap='round'; ctx.lineJoin='round';
-      ctx.strokeStyle=GRAY.body; ctx.lineWidth=d;
-      ctx.beginPath(); ctx.moveTo(spts[0].x,spts[0].y);
-      spts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y)); ctx.stroke();
-      ctx.strokeStyle=GRAY.hi; ctx.lineWidth=d*0.28;
-      ctx.shadowOffsetY=-d*0.32; ctx.shadowColor=GRAY.hi; ctx.shadowBlur=0;
-      ctx.beginPath(); ctx.moveTo(spts[0].x,spts[0].y);
-      spts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y)); ctx.stroke();
-      ctx.shadowOffsetY=0; ctx.shadowColor='transparent';
-      ctx.strokeStyle=GRAY.edge; ctx.lineWidth=0.8;
-      ctx.beginPath(); ctx.moveTo(spts[0].x,spts[0].y);
-      spts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y)); ctx.stroke();
-      ctx.restore();
-      drawDim(ctx,cx-rr,cy,cx+rr,cy,'⌀');
-      break;
-    }
-    case 'crank': {
-      const x0=pad,x3=W-pad,y0=pad+20,y1=H-pad-20;
-      const cx1=cx-sw*0.15,cx2=cx+sw*0.15;
-      drawRebarStraight(ctx,[{x:x0,y:y0},{x:cx1,y:y0},{x:cx2,y:y1},{x:x3,y:y1}],d,false);
-      drawDim(ctx,x0,y0-d-14,x3,y0-d-14,'Span');
-      drawDim(ctx,cx2+d+14,y0,cx2+d+14,y1,'d');
-      break;
-    }
-    case 'chair': {
-      /* BS 8666 shape 98 — chair bar, drawn ISOMETRIC to show full 3D shape.
-         Top bar (A) runs along the X axis; the bar drops down legs (B);
-         feet (C) run along the depth (Z) axis; small end hooks (D).
-         L = A + 2B + C + (D) - 2r - 4d
-      */
-      // Isometric projection: world (x,y,z) → screen (sx,sy)
-      // x → right-down, z → left-down, y → straight up
-      const ISO = Math.PI / 6; // 30°
-      const cosI = Math.cos(ISO), sinI = Math.sin(ISO);
-
-      // World dimensions (scaled to fit)
-      const A = Math.min(sw * 0.5, 200); // top bar length (along x)
-      const B = 90;                       // leg height (along y)
-      const C = 64;                       // foot depth (along z)
-      const Dh = 28;                      // end hook (along y)
-
-      // Project with a temporary origin, measure bounds, then re-center
-      const rawIso = (x, y, z) => ({ x: (x - z) * cosI, y: -y + (x + z) * sinI });
-      const worldPts = [
-        [0,B,0],[A,B,0],[0,0,0],[A,0,0],
-        [0,0,C],[A,0,C],[0,Dh,C],[A,Dh,C],
-      ];
-      const proj = worldPts.map(([x,y,z]) => rawIso(x,y,z));
-      const minX = Math.min(...proj.map(p=>p.x)), maxX = Math.max(...proj.map(p=>p.x));
-      const minY = Math.min(...proj.map(p=>p.y)), maxY = Math.max(...proj.map(p=>p.y));
-      const ox = cx - (minX + maxX) / 2;
-      const oy = cy - (minY + maxY) / 2;
-      const iso = (x, y, z) => { const p = rawIso(x,y,z); return { x: ox + p.x, y: oy + p.y }; };
-
-      // Key world points for the chair
-      const P = {
-        topL:  iso(0, B, 0),
-        topR:  iso(A, B, 0),
-        botL:  iso(0, 0, 0),
-        botR:  iso(A, 0, 0),
-        footL: iso(0, 0, C),
-        footR: iso(A, 0, C),
-        hookL: iso(0, Dh, C),
-        hookR: iso(A, Dh, C),
-      };
-
-      // Top horizontal bar A
-      drawRebarStraightPolyline(ctx,[P.topL,P.topR],d,false);
-
-      // Left side: top → down leg → foot back → up hook
-      drawRebarStraight(ctx,[P.topL,P.botL,P.footL,P.hookL],d,false);
-
-      // Right side: top → down leg → foot back → up hook
-      drawRebarStraight(ctx,[P.topR,P.botR,P.footR,P.hookR],d,false);
-
-      // Dimensions (projected)
-      drawDim(ctx,P.topL.x,P.topL.y-d-14,P.topR.x,P.topR.y-d-14,'A');
-      drawDim(ctx,P.topL.x-d-16,P.topL.y,P.botL.x-d-16,P.botL.y,'B');
-      drawDim(ctx,P.botL.x,P.botL.y+d+14,P.footL.x,P.footL.y+d+14,'C');
-      drawDim(ctx,P.footL.x-d-6,P.footL.y,P.hookL.x-d-6,P.hookL.y,'(D)');
-      break;
-    }
-    default: {
-      drawRebarStraightPolyline(ctx,[{x:pad,y:cy},{x:W-pad,y:cy}],d,false);
-    }
+  // Fallback: a straight bar if shape is unknown / library not loaded
+  if (!def) {
+    drawRebarStraightPolyline(ctx,[{x:pad,y:cy},{x:W-pad,y:cy}],d,false);
+    drawDim(ctx,pad,cy-d-12,W-pad,cy-d-12,'A');
+    return;
   }
+
+  // ---- Parametric generators (circle / spiral) ----
+  if (def.generator === 'circle') {
+    const rr=Math.min(sw,sh)/2-10, pts=[];
+    for(let i=0;i<72;i++){const a=i/72*Math.PI*2; pts.push({x:cx+Math.cos(a)*rr,y:cy+Math.sin(a)*rr});}
+    drawRebarPath(ctx,pts,d,true);
+    (def.dims||[]).forEach(dm=>drawDim(ctx,cx,cy,cx+rr,cy,dm.label));
+    return;
+  }
+  if (def.generator === 'spiral') {
+    const rr=Math.min(sw,sh)/2-12, turns=def.turns||3, pts=[];
+    for(let i=0;i<=turns*72;i++){const t=i/(turns*72),a=t*Math.PI*2*turns;
+      pts.push({x:cx+Math.cos(a)*rr*(0.2+0.8*t),y:cy+Math.sin(a)*rr*(0.2+0.8*t)});}
+    ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
+    const stroke=(col,w,oy)=>{ctx.strokeStyle=col;ctx.lineWidth=w;if(oy){ctx.shadowOffsetY=oy;ctx.shadowColor=GRAY.hi;ctx.shadowBlur=0;}ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));ctx.stroke();ctx.shadowOffsetY=0;ctx.shadowColor='transparent';};
+    stroke(GRAY.body,d,0); stroke(GRAY.hi,d*0.28,-d*0.32); stroke(GRAY.edge,0.8,0);
+    ctx.restore();
+    (def.dims||[]).forEach(dm=>drawDim(ctx,cx-rr,cy,cx+rr,cy,dm.label));
+    return;
+  }
+
+  // ---- Coordinate mappers ----
+  let mapPt;        // segment points -> screen
+  let mapDim;       // dim endpoints  -> screen
+  if (def.iso) {
+    // Collect every world point (segments + iso dims) to auto-centre
+    const all=[];
+    (def.segments||[]).forEach(s=>s.pts.forEach(p=>all.push(p)));
+    (def.dims||[]).forEach(dm=>{ if(dm.iso){all.push(dm.from);all.push(dm.to);} });
+    const fit = def.fit || 200;
+    const scale = Math.min(sw, sh) / (fit * 1.6); // keep within canvas
+    const sAll = all.map(p=>[p[0]*scale,(p[1]||0)*scale,(p[2]||0)*scale]);
+    const project = _makeIsoProjector(sAll, cx, cy);
+    mapPt  = p => project(p[0]*scale, (p[1]||0)*scale, (p[2]||0)*scale);
+    mapDim = p => project(p[0]*scale, (p[1]||0)*scale, (p[2]||0)*scale);
+  } else {
+    // Normalised 0..1 -> padded canvas area
+    mapPt  = p => ({ x: pad + p[0]*sw, y: pad + p[1]*sh });
+    mapDim = p => ({ x: pad + p[0]*sw, y: pad + p[1]*sh });
+  }
+
+  // ---- Render segments ----
+  (def.segments||[]).forEach(seg=>{
+    const pts = seg.pts.map(mapPt);
+    if (pts.length < 2) return;
+    if (seg.closed) {
+      // closed loops always use bend renderer with closed=true
+      drawRebarStraight(ctx, pts, d, true);
+    } else {
+      _shapeRenderer(seg.style)(ctx, pts, d);
+    }
+  });
+
+  // ---- Render dimension lines ----
+  (def.dims||[]).forEach(dm=>{
+    const a = mapDim(dm.from), b = mapDim(dm.to);
+    const off = dm.off || [0,0];
+    drawDim(ctx, a.x+off[0], a.y+off[1], b.x+off[0], b.y+off[1], dm.label);
+  });
 }
 
 /* Dimension line helper */
@@ -737,9 +665,9 @@ const drawerHTML = `
       </div>
 
       <div style="height:1px;background:var(--border)"></div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Shape Preview</div>
-      <div style="display:flex;flex-direction:column;gap:3px">
-        ${['straight','L','U','stirrup','circle','crank','chair'].map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s}" style="font-size:10px;text-align:left;padding:3px 7px">${s}</button>`).join('')}
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Quick Shapes</div>
+      <div id="quickShapeList" style="display:flex;flex-direction:column;gap:3px">
+        <span style="font-size:10px;color:var(--muted)">Loading…</span>
       </div>
     </div>
 
@@ -759,6 +687,8 @@ const drawerHTML = `
       <div style="display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);align-items:center;flex-shrink:0;background:var(--panel)">
         <button id="drawerUndo"  class="btn small ghost"        style="font-size:11px">↩ Undo</button>
         <button id="drawerClear" class="btn small ghost danger" style="font-size:11px">🗑 Clear</button>
+        <span style="flex:1"></span>
+        <button id="drawerExport" class="btn small ghost" style="font-size:11px" title="Export drawn geometry as a shapes.json entry">📐 Export to shapes.json</button>
       </div>
     </div>
   </div>
@@ -802,6 +732,218 @@ function getXY(e) {
   return {
     x: Math.max(0, Math.min(canvas.width,  cx * sx)),
     y: Math.max(0, Math.min(canvas.height, cy * sy)),
+  };
+}
+
+/* =====================================================
+   EXPORT DRAWN SHAPE  →  shapes.json definition
+   Converts the current `history` (drawn segments + dims)
+   into a normalised declarative shape entry that can be
+   pasted into bbs/shapes.json.
+   ===================================================== */
+function buildShapeDefinition(meta) {
+  // 1) Collect geometry segments + dim lines from history
+  const rawSegments = []; // {pts:[{x,y}], style, closed}
+  const rawDims     = []; // {x1,y1,x2,y2,label}
+
+  for (const cmd of history) {
+    if (cmd.type === 'rebar-path') {
+      rawSegments.push({
+        pts: cmd.points.map(p => ({ x: p.x, y: p.y })),
+        style: cmd.bezier ? 'curve' : 'straight',
+        closed: !!cmd.closed,
+      });
+    } else if (cmd.type === 'ortho-bar') {
+      rawSegments.push({
+        pts: cmd.points.map(p => ({ x: p.x, y: p.y })),
+        style: 'bend',
+        closed: !!cmd.closed,
+      });
+    } else if (cmd.type === 'rect') {
+      const lx = Math.min(cmd.x, cmd.x + cmd.w), rx = Math.max(cmd.x, cmd.x + cmd.w);
+      const ty = Math.min(cmd.y, cmd.y + cmd.h), by = Math.max(cmd.y, cmd.y + cmd.h);
+      rawSegments.push({
+        pts: [{x:lx,y:ty},{x:rx,y:ty},{x:rx,y:by},{x:lx,y:by}],
+        style: 'bend',
+        closed: true,
+      });
+    } else if (cmd.type === 'circle') {
+      // Emit as a closed bend polygon approximation (keeps editable points).
+      // Near-circular ones can be hand-swapped for "generator":"circle".
+      const steps = 24, pts = [];
+      for (let i = 0; i < steps; i++) {
+        const a = i / steps * Math.PI * 2;
+        pts.push({ x: cmd.cx + Math.cos(a) * cmd.rx, y: cmd.cy + Math.sin(a) * cmd.ry });
+      }
+      rawSegments.push({ pts, style: 'curve', closed: true });
+    } else if (cmd.type === 'dim') {
+      rawDims.push({ x1: cmd.x1, y1: cmd.y1, x2: cmd.x2, y2: cmd.y2, label: cmd.label || '' });
+    }
+    // 'text' annotations are not part of geometry — skipped
+  }
+
+  if (!rawSegments.length) return { error: 'Nothing to export — draw at least one bar segment first.' };
+
+  // 2) Compute bounding box over ALL geometry points (segments + dim endpoints)
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const consider = (x, y) => {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  };
+  rawSegments.forEach(s => s.pts.forEach(p => consider(p.x, p.y)));
+  rawDims.forEach(d => { consider(d.x1, d.y1); consider(d.x2, d.y2); });
+
+  const bw = maxX - minX || 1, bh = maxY - minY || 1;
+  // Normalise to 0..1 within the bounding box, rounded to 3 dp
+  const nx = x => +(((x - minX) / bw)).toFixed(3);
+  const ny = y => +(((y - minY) / bh)).toFixed(3);
+
+  // 3) Build segments in shapes.json shape
+  const segments = rawSegments.map(s => {
+    const seg = { pts: s.pts.map(p => [nx(p.x), ny(p.y)]), style: s.style };
+    if (s.closed) seg.closed = true;
+    return seg;
+  });
+
+  // 4) Build dims — convert pixel offset back to a small px offset (kept as-is)
+  const dims = rawDims.map(d => ({
+    from: [nx(d.x1), ny(d.y1)],
+    to:   [nx(d.x2), ny(d.y2)],
+    label: d.label || 'A',
+  }));
+
+  // 5) Assemble the definition
+  const def = {
+    id:      meta.id,
+    label:   meta.label || meta.id,
+    group:   'quick',
+  };
+  if (meta.bs8666)  def.bs8666  = meta.bs8666;
+  if (meta.formula) def.formula = meta.formula;
+  def.segments = segments;
+  if (dims.length) def.dims = dims;
+
+  return { def };
+}
+
+// Show the export dialog with the generated JSON + copy/download actions
+function exportDrawnShape() {
+  const id = (prompt('Shape ID (unique, no spaces) — e.g. "myhook":', '') || '').trim();
+  if (!id) return;
+  const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+  const label   = (prompt('Button label (shown in Quick Shapes):', safeId) || safeId).trim();
+  const bs8666  = (prompt('BS 8666 code (optional, blank to skip):', '') || '').trim();
+  const formula = (prompt('Cutting-length formula (optional, blank to skip):', '') || '').trim();
+
+  const result = buildShapeDefinition({ id: safeId, label, bs8666, formula });
+  if (result.error) { alert(result.error); return; }
+
+  const jsonText = formatCompactShape(result.def);
+  showExportPanel(jsonText, safeId);
+}
+
+// Compact, human-readable formatter: inline coord arrays, one item per line
+function formatCompactShape(def) {
+  const j = (v) => JSON.stringify(v); // compact, no spaces in arrays
+  const lines = [];
+  lines.push('{');
+  const head = [];
+  head.push(`  "id": ${j(def.id)}`);
+  head.push(`  "label": ${j(def.label)}`);
+  if (def.bs8666)  head.push(`  "bs8666": ${j(def.bs8666)}`);
+  if (def.formula) head.push(`  "formula": ${j(def.formula)}`);
+  head.push(`  "group": ${j(def.group || 'quick')}`);
+
+  // segments: each segment object on one line
+  const segLines = (def.segments || []).map(s => {
+    const parts = [`"pts": ${j(s.pts)}`, `"style": ${j(s.style)}`];
+    if (s.closed) parts.push(`"closed": true`);
+    return `    { ${parts.join(', ')} }`;
+  });
+  const segBlock = `  "segments": [\n${segLines.join(',\n')}\n  ]`;
+
+  let body = head.join(',\n') + ',\n' + segBlock;
+
+  // dims: each dim object on one line
+  if (def.dims && def.dims.length) {
+    const dimLines = def.dims.map(d => {
+      const parts = [`"from": ${j(d.from)}`, `"to": ${j(d.to)}`, `"label": ${j(d.label)}`];
+      if (d.off) parts.push(`"off": ${j(d.off)}`);
+      return `    { ${parts.join(', ')} }`;
+    });
+    body += ',\n  "dims": [\n' + dimLines.join(',\n') + '\n  ]';
+  }
+
+  lines.push(body);
+  lines.push('}');
+  return lines.join('\n');
+}
+
+// Build & display the export result panel (textarea + copy + download)
+function showExportPanel(jsonText, id) {
+  let panel = document.getElementById('shapeExportPanel');
+  if (panel) panel.remove();
+
+  // Use a <dialog> + showModal so it joins the browser top layer and renders
+  // ABOVE the drawer dialog (which is also a modal dialog in the top layer).
+  panel = document.createElement('dialog');
+  panel.id = 'shapeExportPanel';
+  panel.style.cssText =
+    'background:var(--panel,#1e2535);color:var(--text,#dde3f0);border:1px solid var(--border,#2e3a52);' +
+    'border-radius:16px;max-width:560px;width:92vw;max-height:88vh;padding:0;overflow:hidden;' +
+    'box-shadow:0 24px 60px rgba(0,0,0,.5)';
+  panel.innerHTML = `
+    <div style="display:flex;flex-direction:column;max-height:88vh">
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border,#2e3a52);display:flex;align-items:center;gap:10px">
+        <span style="font-weight:800;font-size:15px">📐 Shape exported</span>
+        <span style="flex:1"></span>
+        <button id="expClose" class="btn small ghost" style="font-size:12px">✕</button>
+      </div>
+      <div style="padding:14px 18px;font-size:12px;line-height:1.6;color:var(--muted,#8a9ab8)">
+        Copy this entry into the <b>"shapes"</b> array in <code>bbs/shapes.json</code>,
+        then run <code>node bbs/build-shapes.js</code> (or just serve over http).
+        The new shape appears in Quick Shapes automatically.
+      </div>
+      <textarea id="expJson" readonly style="margin:0 18px;flex:1;min-height:200px;resize:vertical;
+        font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;
+        background:var(--input-bg,#141820);color:var(--text,#dde3f0);
+        border:1px solid var(--border,#2e3a52);border-radius:8px;padding:10px;white-space:pre">${
+          jsonText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        }</textarea>
+      <div style="padding:14px 18px;display:flex;gap:8px;justify-content:flex-end">
+        <button id="expCopy"     class="btn small primary" style="font-size:12px">📋 Copy</button>
+        <button id="expDownload" class="btn small ghost"   style="font-size:12px">⬇ Download .json</button>
+      </div>
+    </div>`;
+  document.body.appendChild(panel);
+  panel.showModal();
+
+  const close = () => { panel.close(); panel.remove(); };
+  panel.querySelector('#expClose').onclick = close;
+  // Click on the ::backdrop (outside the content) closes it
+  panel.addEventListener('click', e => { if (e.target === panel) close(); });
+
+  panel.querySelector('#expCopy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(jsonText);
+      const b = panel.querySelector('#expCopy');
+      b.textContent = '✓ Copied'; setTimeout(() => (b.textContent = '📋 Copy'), 1500);
+    } catch {
+      // Fallback: select the textarea text
+      const ta = panel.querySelector('#expJson');
+      ta.removeAttribute('readonly'); ta.focus(); ta.select();
+      document.execCommand('copy'); ta.setAttribute('readonly', '');
+    }
+  };
+
+  panel.querySelector('#expDownload').onclick = () => {
+    const blob = new Blob([jsonText], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `shape-${id}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
   };
 }
 
@@ -1287,7 +1429,8 @@ function initDrawer() {
   document.addEventListener('keydown',  onKeyDown);
 
   // Strip any previously-attached button listeners by replacing each button with a fresh clone
-  document.querySelectorAll('.drawer-tool, .rebar-style-btn, .annot-preset, .shape-prev-btn').forEach(b => {
+  // (quick-shape buttons are rebuilt separately by populateQuickShapes)
+  document.querySelectorAll('.drawer-tool, .rebar-style-btn, .annot-preset').forEach(b => {
     const clone = b.cloneNode(true);
     b.parentNode.replaceChild(clone, b);
   });
@@ -1298,10 +1441,6 @@ function initDrawer() {
     document.getElementById('drawerAnnotText').value = b.dataset.text;
     setTool('text');
   }));
-  document.querySelectorAll('.shape-prev-btn').forEach(b => b.addEventListener('click', () => {
-    history = [{ type:'shape', shape:b.dataset.shape, diam:getBarSize(), style:activeStyle }];
-    redraw();
-  }));
 
   document.getElementById('drawerBarSize').addEventListener('input', e => {
     document.getElementById('drawerBarVal').textContent = e.target.value;
@@ -1311,14 +1450,18 @@ function initDrawer() {
   document.getElementById('drawerFontSize').addEventListener('input', e => {
     document.getElementById('drawerFontVal').textContent = e.target.value;
   });
-  document.getElementById('drawerUndo').addEventListener('click', () => {
+  document.getElementById('drawerUndo').onclick = () => {
     if (isDrawing && livePts.length > 1) { livePts.pop(); renderGhostFrame(mousePos); return; }
     if (isDrawing)                        { cancelPath(); return; }
     history.pop(); redraw();
-  });
-  document.getElementById('drawerClear').addEventListener('click', () => {
+  };
+  document.getElementById('drawerClear').onclick = () => {
     cancelPath(); history = []; redraw();
-  });
+  };
+  document.getElementById('drawerExport').onclick = () => {
+    if (isDrawing) commitRebarPath();  // finalise any in-progress path first
+    exportDrawnShape();
+  };
 
   setTool('rebar-path');
   setStyle('tor');
@@ -1329,13 +1472,64 @@ function ensureDrawerModal() {
     document.body.insertAdjacentHTML('beforeend', drawerHTML);
 }
 
+/* ── Shape library loading (bbs/shapes.json) ── */
+window.SHAPE_LIB      = window.SHAPE_LIB || {};      // id -> definition
+window.SHAPE_LIB_LIST = window.SHAPE_LIB_LIST || []; // ordered array
+
+async function loadShapeLibrary() {
+  if (window.SHAPE_LIB_LIST.length) return; // already loaded
+
+  // 1) Start from the embedded default library (always works, even on file://)
+  let list = Array.isArray(window.SHAPE_LIB_DEFAULT) ? window.SHAPE_LIB_DEFAULT.slice() : [];
+
+  // 2) Try to override/extend from the editable bbs/shapes.json (works over http)
+  try {
+    const res = await fetch('bbs/shapes.json', { cache: 'no-cache' });
+    if (res.ok) {
+      const data = await res.json();
+      const fileList = (data.shapes || []).filter(s => s && s.id);
+      if (fileList.length) list = fileList;   // JSON file wins when present & valid
+    }
+  } catch (err) {
+    // fetch fails on file:// or offline — silently keep the embedded default
+    console.info('shapes.json not fetched (using embedded default):', err.message);
+  }
+
+  // 3) Last-resort fallback so the drawer never breaks
+  if (!list.length) {
+    list = [{ id:'straight', label:'Straight', group:'quick',
+      segments:[{pts:[[0,0.5],[1,0.5]],style:'straight'}],
+      dims:[{from:[0,0.5],to:[1,0.5],label:'A',off:[0,-24]}] }];
+  }
+
+  window.SHAPE_LIB_LIST = list;
+  window.SHAPE_LIB = {};
+  list.forEach(s => { window.SHAPE_LIB[s.id] = s; });
+}
+
+function populateQuickShapes() {
+  const host = document.getElementById('quickShapeList');
+  if (!host) return;
+  const quick = window.SHAPE_LIB_LIST.filter(s => (s.group || 'quick') === 'quick');
+  if (!quick.length) { host.innerHTML = '<span style="font-size:10px;color:var(--muted)">No shapes</span>'; return; }
+  host.innerHTML = quick.map(s =>
+    `<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.bs8666 ? 'BS 8666 shape ' + s.bs8666 : ''}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label || s.id}</button>`
+  ).join('');
+  // Wire clicks (cloned-fresh elements, so bind here)
+  host.querySelectorAll('.shape-prev-btn').forEach(b => b.addEventListener('click', () => {
+    history = [{ type:'shape', shape:b.dataset.shape, diam:getBarSize(), style:activeStyle }];
+    redraw();
+  }));
+}
+
 window.ShapeDrawer = {
-  open(callback) {
+  async open(callback) {
     ensureDrawerModal();
+    await loadShapeLibrary();
     drawerCallback = callback;
     const dlg = document.getElementById('shapeDrawerDlg');
     dlg.showModal();
-    setTimeout(initDrawer, 60);
+    setTimeout(() => { initDrawer(); populateQuickShapes(); }, 60);
     document.getElementById('drawerDone').onclick   = () => {
       if (isDrawing) commitRebarPath();
       dlg.close();
