@@ -665,7 +665,10 @@ const drawerHTML = `
       </div>
 
       <div style="height:1px;background:var(--border)"></div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Quick Shapes</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;flex:1">Quick Shapes</span>
+        <button id="loadShapesBtn" class="btn small ghost" style="font-size:9px;padding:2px 6px" title="Manually load a shapes.json file (use this when opened from disk / file://)">⤓ Load JSON</button>
+      </div>
       <div id="quickShapeList" style="display:flex;flex-direction:column;gap:3px">
         <span style="font-size:10px;color:var(--muted)">Loading…</span>
       </div>
@@ -843,41 +846,49 @@ function exportDrawnShape() {
   showExportPanel(jsonText, safeId);
 }
 
-// Compact, human-readable formatter: inline coord arrays, one item per line
+// Format exported shape to match the compact style used in shapes.json
 function formatCompactShape(def) {
-  const j = (v) => JSON.stringify(v); // compact, no spaces in arrays
-  const lines = [];
-  lines.push('{');
-  const head = [];
-  head.push(`  "id": ${j(def.id)}`);
-  head.push(`  "label": ${j(def.label)}`);
-  if (def.bs8666)  head.push(`  "bs8666": ${j(def.bs8666)}`);
-  if (def.formula) head.push(`  "formula": ${j(def.formula)}`);
-  head.push(`  "group": ${j(def.group || 'quick')}`);
+  const q  = (s) => JSON.stringify(s);                 // quoted string
+  const ja = (a) => JSON.stringify(a);                 // compact array (no spaces)
 
-  // segments: each segment object on one line
-  const segLines = (def.segments || []).map(s => {
-    const parts = [`"pts": ${j(s.pts)}`, `"style": ${j(s.style)}`];
-    if (s.closed) parts.push(`"closed": true`);
-    return `    { ${parts.join(', ')} }`;
+  // Scalar header fields — pack onto as few lines as possible (≤80 chars per line)
+  const scalars = [];
+  scalars.push(`"id": ${q(def.id)}, "label": ${q(def.label)}`);
+  if (def.bs8666)  scalars[scalars.length-1] += `, "bs8666": ${q(def.bs8666)}`;
+  if (def.formula) scalars.push(`"formula": ${q(def.formula)}`);
+  scalars.push(`"group": ${q(def.group || 'quick')}`);
+
+  // Segments — each object inline, e.g. { "pts": [...], "style": "bend" }
+  const segObjs = (def.segments || []).map(s => {
+    let o = `{ "pts": ${ja(s.pts)}, "style": ${q(s.style)}`;
+    if (s.closed) o += ', "closed": true';
+    if (s.comment) o += `, "_note": ${q(s.comment)}`;
+    return o + ' }';
   });
-  const segBlock = `  "segments": [\n${segLines.join(',\n')}\n  ]`;
+  // If all segments fit on one line (≤120 chars) use single-line form, else one per line
+  const segInline = '[ ' + segObjs.join(', ') + ' ]';
+  const segBlock  = segObjs.length <= 1 || segInline.length <= 120
+    ? `"segments": ${segInline}`
+    : `"segments": [\n      ${segObjs.join(',\n      ')}\n      ]`;
 
-  let body = head.join(',\n') + ',\n' + segBlock;
-
-  // dims: each dim object on one line
+  // Dims — always one per line for readability
+  let dimsBlock = '';
   if (def.dims && def.dims.length) {
-    const dimLines = def.dims.map(d => {
-      const parts = [`"from": ${j(d.from)}`, `"to": ${j(d.to)}`, `"label": ${j(d.label)}`];
-      if (d.off) parts.push(`"off": ${j(d.off)}`);
-      return `    { ${parts.join(', ')} }`;
+    const dimObjs = def.dims.map(d => {
+      let o = `{ "from": ${ja(d.from)}, "to": ${ja(d.to)}, "label": ${q(d.label)}`;
+      if (d.off) o += `, "off": ${ja(d.off)}`;
+      if (d.iso) o = `{ "iso": true, "from": ${ja(d.from)}, "to": ${ja(d.to)}, "label": ${q(d.label)}${d.off ? `, "off": ${ja(d.off)}` : ''}`;
+      return o + ' }';
     });
-    body += ',\n  "dims": [\n' + dimLines.join(',\n') + '\n  ]';
+    dimsBlock = `,\n      "dims": [\n        ${dimObjs.join(',\n        ')}\n      ]`;
   }
 
-  lines.push(body);
-  lines.push('}');
-  return lines.join('\n');
+  // Assemble: 6-space indent matches shapes.json array body indentation
+  const indent = '      ';
+  const fields = scalars.map(s => indent + s).join(',\n') +
+    ',\n' + indent + segBlock + dimsBlock;
+
+  return `{\n${fields}\n    }`;
 }
 
 // Build & display the export result panel (textarea + copy + download)
@@ -1491,8 +1502,9 @@ async function loadShapeLibrary() {
       if (fileList.length) list = fileList;   // JSON file wins when present & valid
     }
   } catch (err) {
-    // fetch fails on file:// or offline — silently keep the embedded default
-    console.info('shapes.json not fetched (using embedded default):', err.message);
+    // fetch fails on file:// (CORS) or offline — keep the embedded default.
+    // The user can also use the "⤓ Load JSON" button to load shapes.json manually.
+    console.info('shapes.json not auto-fetched (using embedded default). On file:// use the "Load JSON" button to load it manually.');
   }
 
   // 3) Last-resort fallback so the drawer never breaks
@@ -1505,6 +1517,45 @@ async function loadShapeLibrary() {
   window.SHAPE_LIB_LIST = list;
   window.SHAPE_LIB = {};
   list.forEach(s => { window.SHAPE_LIB[s.id] = s; });
+}
+
+// Apply a parsed shapes-list to the live library and refresh the UI
+function applyShapeList(list, sourceLabel) {
+  const clean = (list || []).filter(s => s && s.id);
+  if (!clean.length) { alert('No valid shapes found in ' + (sourceLabel || 'file') + '.'); return false; }
+  window.SHAPE_LIB_LIST = clean;
+  window.SHAPE_LIB = {};
+  clean.forEach(s => { window.SHAPE_LIB[s.id] = s; });
+  populateQuickShapes();
+  return true;
+}
+
+// Manually load a shapes.json file chosen by the user (works on file://)
+function manualLoadShapesJson() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.json,application/json';
+  inp.onchange = () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        // Accept either {shapes:[...]} or a bare array of shapes
+        const list = Array.isArray(data) ? data : (data.shapes || []);
+        if (applyShapeList(list, file.name)) {
+          const btn = document.getElementById('loadShapesBtn');
+          if (btn) { const t = btn.textContent; btn.textContent = '✓ Loaded'; setTimeout(() => (btn.textContent = t), 1500); }
+        }
+      } catch (err) {
+        alert('Could not parse JSON: ' + err.message);
+      }
+    };
+    reader.onerror = () => alert('Could not read file.');
+    reader.readAsText(file);
+  };
+  inp.click();
 }
 
 function populateQuickShapes() {
@@ -1520,6 +1571,10 @@ function populateQuickShapes() {
     history = [{ type:'shape', shape:b.dataset.shape, diam:getBarSize(), style:activeStyle }];
     redraw();
   }));
+
+  // Wire the manual JSON loader button (idempotent via onclick)
+  const loadBtn = document.getElementById('loadShapesBtn');
+  if (loadBtn) loadBtn.onclick = manualLoadShapesJson;
 }
 
 window.ShapeDrawer = {
