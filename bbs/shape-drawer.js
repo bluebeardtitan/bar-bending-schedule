@@ -1,10 +1,6 @@
 /* =========================================================
    Shape Drawer — Konva-powered rebar renderer
-   Replaces manual Bézier/spline/ortho geometry with Konva's
-   built-in tension-based Catmull-Rom Line.
    ========================================================= */
-
-/* ── Load Konva lazily (injected into index.html via script tag) ── */
 
 const REBAR_STYLES = [
   { id:'tor',        label:'⟋ TOR / Diagonal Rib', ribAngle:-40, ribSpacing:22, ribWidth:0.35, alternate:false },
@@ -23,20 +19,17 @@ const GRAY = {
   bg:    '#ffffff',
 };
 
-const BEND_TENSION  = 0.4;   // Catmull-Rom tension for 'bend' style
-const CURVE_TENSION = 0.4;   // tension for 'curve' style
-
 /* =====================================================
-   KONVA STAGE — one stage per canvas element
+   KONVA STAGE
    ===================================================== */
-let _konvaStage  = null;   // Konva.Stage (drawer)
-let _konvaLayer  = null;   // Konva.Layer  (drawer)
+let _konvaStage = null;
+let _konvaLayer = null;
 
 function getKonvaLayer() { return _konvaLayer; }
 
 function initKonvaStage(containerEl, width, height) {
   if (typeof Konva === 'undefined') throw new Error('Konva not loaded — check bbs/konva.min.js script tag.');
-  if (_konvaStage) { _konvaStage.destroy(); _konvaStage = null; _konvaLayer = null; }
+  if (_konvaStage) { _konvaStage.destroy(); _konvaStage = null; _konvaLayer = null; _gridLayer = null; }
   _konvaStage = new Konva.Stage({ container: containerEl, width, height });
   _konvaLayer = new Konva.Layer();
   _konvaStage.add(_konvaLayer);
@@ -44,135 +37,219 @@ function initKonvaStage(containerEl, width, height) {
 }
 
 /* =====================================================
-   REBAR PATH — build a Konva.Group with body + highlight
-   + optional ribs drawn via canvas2d on a custom shape.
-
-   style: 'bend' | 'curve' | 'straight'
+   FILLET GEOMETRY — works for any segment angles.
+   Straight segments joined by a precise circular arc
+   fillet at every interior corner, using arcTo.
+   Radius = FILLET_FACTOR × diameter, clamped to half
+   of the shorter adjacent segment.
+   Returns { path: Path2D, samples: [{x,y}] }
    ===================================================== */
-function makeRebarGroup(points, diam, style, closed) {
-  const d       = diam || 14;
-  const tension = (style === 'straight') ? 0 : BEND_TENSION;
-  const flatPts = points.flatMap(p => [p.x, p.y]);
+const FILLET_FACTOR = 2.0;   // same for both rebar-path and ortho-bar
 
-  const group = new Konva.Group();
+function buildFilletGeometry(points, diam, closed) {
+  const STEP = 2;
+  const n    = points.length;
+  if (n < 2) return { path: new Path2D(), samples: [] };
 
-  /* ── Body ── */
-  const body = new Konva.Line({
-    points:   flatPts,
-    stroke:   GRAY.body,
-    strokeWidth: d,
-    lineCap:  'round',
-    lineJoin: 'round',
-    tension,
-    closed,
-  });
+  const R      = Math.max(4, (diam || 16) * FILLET_FACTOR);
+  const path   = new Path2D();
+  const samples = [];   // each element: { x, y, ux, uy }  — tangent baked in
 
-  /* ── Highlight (white stripe via offset shadow trick) ── */
-  const hi = new Konva.Line({
-    points:    flatPts,
-    stroke:    GRAY.hi,
-    strokeWidth: d * 0.28,
-    lineCap:   'round',
-    lineJoin:  'round',
-    tension,
-    closed,
-    shadowColor:   GRAY.hi,
-    shadowOffsetX: 0,
-    shadowOffsetY: -d * 0.32,
-    shadowBlur:    0,
-    shadowEnabled: true,
-  });
+  const pts    = closed ? [...points, points[0]] : points;
+  const segLen = [];
+  for (let i = 0; i < pts.length - 1; i++)
+    segLen.push(Math.hypot(pts[i+1].x - pts[i].x, pts[i+1].y - pts[i].y));
 
-  /* ── Ribs (canvas2d custom shape so we can sample along path) ── */
-  const styleId = window._drawerActiveStyle || 'tor';
-  const cfg     = REBAR_STYLES.find(s => s.id === styleId) || REBAR_STYLES[0];
-
-  if (cfg.ribSpacing > 0 && d >= 5) {
-    // Sample along the polyline/spline to get rib placement points + tangents.
-    // For Konva tension lines we approximate by sampling the cubic Bézier
-    // segments that Konva would draw (same Catmull-Rom formula).
-    const samples = sampleKonvaLine(points, tension, closed);
-    const ribShape = new Konva.Shape({
-      sceneFunc(ctx) {
-        drawRibsAlongSamples(ctx._context || ctx, samples, d, cfg);
-      },
-    });
-    group.add(body, hi, ribShape);
-  } else {
-    group.add(body, hi);
+  /* emit samples along a straight segment; tangent is constant = (ux,uy) */
+  function sampleLine(x0, y0, x1, y1, ux, uy) {
+    const d = Math.hypot(x1-x0, y1-y0);
+    if (d < 0.001) return;
+    const steps = Math.max(1, Math.ceil(d / STEP));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      samples.push({ x: x0+(x1-x0)*t, y: y0+(y1-y0)*t, ux, uy });
+    }
   }
 
-  /* ── Hairline outline ── */
-  const outline = new Konva.Line({
-    points:   flatPts,
-    stroke:   GRAY.edge,
-    strokeWidth: 0.8,
-    lineCap:  'round',
-    lineJoin: 'round',
-    tension,
-    closed,
-  });
-  group.add(outline);
+  /* emit samples along a circular arc; tangent = perp to radius at each point */
+  function sampleArc(cx, cy, r, a0, a1, ccw) {
+    let sweep = a1 - a0;
+    while (sweep >  Math.PI) sweep -= 2*Math.PI;
+    while (sweep < -Math.PI) sweep += 2*Math.PI;
+    if (Math.abs(sweep) < 1e-4) return;
+    const steps = Math.max(4, Math.ceil(r * Math.abs(sweep) / STEP));
+    for (let s = 1; s <= steps; s++) {
+      const a  = a0 + sweep * (s / steps);
+      const px = cx + Math.cos(a) * r;
+      const py = cy + Math.sin(a) * r;
+      /* tangent = radius rotated 90° in direction of travel */
+      const sign = sweep > 0 ? 1 : -1;
+      samples.push({ x: px, y: py, ux: -Math.sin(a)*sign, uy: Math.cos(a)*sign });
+    }
+  }
 
-  return group;
+  path.moveTo(pts[0].x, pts[0].y);
+  /* first sample tangent: direction of first segment */
+  const d0 = segLen[0] || 1;
+  samples.push({
+    x: pts[0].x, y: pts[0].y,
+    ux: (pts[1].x - pts[0].x) / d0,
+    uy: (pts[1].y - pts[0].y) / d0,
+  });
+  let curX = pts[0].x, curY = pts[0].y;
+  const total = pts.length - 1;
+
+  for (let i = 0; i < total; i++) {
+    const P1 = pts[i + 1];
+    const d1 = segLen[i];
+    const u1x = (P1.x - pts[i].x) / d1, u1y = (P1.y - pts[i].y) / d1;
+
+    if (i === total - 1) {
+      path.lineTo(P1.x, P1.y);
+      sampleLine(curX, curY, P1.x, P1.y, u1x, u1y);
+      break;
+    }
+
+    const P2  = pts[i + 2];
+    const d2  = segLen[i+1];
+    const u2x = (P2.x - P1.x) / d2, u2y = (P2.y - P1.y) / d2;
+
+    const dot   = u1x * u2x + u1y * u2y;
+    const cross = u1x * u2y - u1y * u2x;
+
+    /* deflection angle (how much direction turns), 0..π */
+    const defl = Math.atan2(Math.abs(cross), dot);
+    if (defl < 1e-3) {
+      /* collinear — no fillet */
+      path.lineTo(P1.x, P1.y);
+      sampleLine(curX, curY, P1.x, P1.y, u1x, u1y);
+      curX = P1.x; curY = P1.y;
+      continue;
+    }
+
+    /* tangent distance from the corner = R·tan(defl/2).
+       Exact for any angle (reduces to R for a 90° turn). */
+    const halfTan = Math.tan(defl / 2);
+    let R2    = R;
+    let tDist = R2 * halfTan;
+    const maxT = Math.min(segLen[i], segLen[i+1]) / 2;
+    if (tDist > maxT) { tDist = maxT; R2 = tDist / halfTan; }
+
+    const T1 = { x: P1.x - u1x * tDist, y: P1.y - u1y * tDist };
+    const T2 = { x: P1.x + u2x * tDist, y: P1.y + u2y * tDist };
+
+    /* arc centre: inward normal to incoming segment, distance R2 */
+    const sign = cross > 0 ? 1 : -1;
+    const acx  = T1.x + sign * (-u1y) * R2;
+    const acy  = T1.y + sign * ( u1x) * R2;
+    const a0   = Math.atan2(T1.y - acy, T1.x - acx);
+    const a1   = Math.atan2(T2.y - acy, T2.x - acx);
+
+    path.lineTo(T1.x, T1.y);
+    sampleLine(curX, curY, T1.x, T1.y, u1x, u1y);
+
+    path.arcTo(P1.x, P1.y, P2.x, P2.y, R2);
+    sampleArc(acx, acy, R2, a0, a1);
+
+    curX = T2.x; curY = T2.y;
+  }
+
+  if (closed) path.closePath();
+  return { path, samples };
 }
 
 /* =====================================================
-   SAMPLE KONVA TENSION LINE
-   Reproduce Konva's Catmull-Rom → cubic Bézier conversion
-   to get dense {x,y} samples for rib placement.
+   SPLINE GEOMETRY — Catmull-Rom for free-form 'curve'
+   style only. Returns { path: Path2D, samples }.
    ===================================================== */
-function sampleKonvaLine(points, tension, closed) {
-  const STEP = 2;
-  const n    = points.length;
-  if (n < 2) return [];
-  if (tension === 0) {
-    // Straight polyline — just interpolate linearly
-    const samples = [];
-    const pts = closed ? [...points, points[0]] : points;
-    for (let i = 1; i < pts.length; i++) {
-      const x0 = pts[i-1].x, y0 = pts[i-1].y;
-      const x1 = pts[i].x,   y1 = pts[i].y;
-      const d  = Math.hypot(x1-x0, y1-y0);
-      const steps = Math.max(1, Math.ceil(d / STEP));
-      for (let s = (i === 1 ? 0 : 1); s <= steps; s++) {
-        const t = s / steps;
-        samples.push({ x: x0 + (x1-x0)*t, y: y0 + (y1-y0)*t });
-      }
-    }
-    return samples;
-  }
+function buildSplineGeometry(points, closed) {
+  const STEP    = 2;
+  const TENSION = 0.4;
+  const T       = TENSION * 0.5; // Konva internal scaling
+  const n       = points.length;
+  if (n < 2) return { path: new Path2D(), samples: [] };
 
-  // Konva uses tension * 0.5 internally on the t parameter
-  const T = tension * 0.5;
   const pts = closed
     ? [...points, points[0], points[1]]
     : [points[0], ...points, points[n-1]];
-
-  const samples = [{ x: points[0].x, y: points[0].y }];
   const segCount = closed ? n : n - 1;
 
+  const path    = new Path2D();
+  const p0next = pts[1] || pts[0];
+  const _stx = p0next.x - pts[0].x, _sty = p0next.y - pts[0].y;
+  const _stl = Math.hypot(_stx, _sty) || 1;
+  const samples = [{ x: points[0].x, y: points[0].y, ux: _stx/_stl, uy: _sty/_stl }];
+  path.moveTo(points[0].x, points[0].y);
+
   for (let i = 0; i < segCount; i++) {
-    const P0 = pts[i], P1 = pts[i+1], P2 = pts[i+2], P3 = pts[i+3] || pts[i+2];
-    const cp1 = {
-      x: P1.x + T * (P2.x - P0.x),
-      y: P1.y + T * (P2.y - P0.y),
-    };
-    const cp2 = {
-      x: P2.x - T * (P3.x - P1.x),
-      y: P2.y - T * (P3.y - P1.y),
-    };
-    const segLen = Math.hypot(P2.x-P1.x, P2.y-P1.y);
-    const steps  = Math.max(12, Math.ceil(segLen / STEP));
+    const P0=pts[i], P1=pts[i+1], P2=pts[i+2], P3=pts[i+3]||pts[i+2];
+    const cp1 = { x: P1.x + T*(P2.x-P0.x), y: P1.y + T*(P2.y-P0.y) };
+    const cp2 = { x: P2.x - T*(P3.x-P1.x), y: P2.y - T*(P3.y-P1.y) };
+    path.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, P2.x, P2.y);
+    const steps = Math.max(12, Math.ceil(Math.hypot(P2.x-P1.x, P2.y-P1.y) / STEP));
     for (let s = 1; s <= steps; s++) {
-      const t = s / steps, mt = 1 - t;
+      const t=s/steps, mt=1-t;
+      const bx = mt*mt*mt*P1.x + 3*mt*mt*t*cp1.x + 3*mt*t*t*cp2.x + t*t*t*P2.x;
+      const by = mt*mt*mt*P1.y + 3*mt*mt*t*cp1.y + 3*mt*t*t*cp2.y + t*t*t*P2.y;
+      /* cubic Bézier tangent (derivative) */
+      const dtx = 3*mt*mt*(cp1.x-P1.x) + 6*mt*t*(cp2.x-cp1.x) + 3*t*t*(P2.x-cp2.x);
+      const dty = 3*mt*mt*(cp1.y-P1.y) + 6*mt*t*(cp2.y-cp1.y) + 3*t*t*(P2.y-cp2.y);
+      const tlen = Math.hypot(dtx, dty);
       samples.push({
-        x: mt*mt*mt*P1.x + 3*mt*mt*t*cp1.x + 3*mt*t*t*cp2.x + t*t*t*P2.x,
-        y: mt*mt*mt*P1.y + 3*mt*mt*t*cp1.y + 3*mt*t*t*cp2.y + t*t*t*P2.y,
+        x: bx, y: by,
+        ux: tlen > 0.001 ? dtx/tlen : 1,
+        uy: tlen > 0.001 ? dty/tlen : 0,
       });
     }
   }
-  return samples;
+  if (closed) path.closePath();
+  return { path, samples };
+}
+
+/* =====================================================
+   SHARED REBAR STROKE — layers body/highlight/ribs/outline
+   onto any { path, samples } geometry, canvas2d context.
+   ===================================================== */
+function strokeRebarPath(ctx, path, samples, diam, cfg) {
+  const d = diam;
+  ctx.save();
+  ctx.lineCap  = 'round';
+  ctx.lineJoin = 'round';
+
+  ctx.strokeStyle = GRAY.body; ctx.lineWidth = d; ctx.stroke(path);
+
+  ctx.strokeStyle   = GRAY.hi; ctx.lineWidth = d * 0.28;
+  ctx.shadowColor   = GRAY.hi; ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = -d * 0.32; ctx.shadowBlur = 0;
+  ctx.stroke(path);
+  ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
+
+  if (cfg.ribSpacing > 0 && d >= 5) drawRibsAlongSamples(ctx, samples, d, cfg);
+
+  ctx.strokeStyle = GRAY.edge; ctx.lineWidth = 0.8; ctx.stroke(path);
+  ctx.restore();
+}
+
+/* =====================================================
+   KONVA REBAR GROUP
+   style: 'bend' | 'straight' → fillet geometry
+          'curve'              → spline geometry
+   ===================================================== */
+function makeRebarGroup(points, diam, style, closed) {
+  const d       = diam || 14;
+  const styleId = window._drawerActiveStyle || 'tor';
+  const cfg     = REBAR_STYLES.find(s => s.id === styleId) || REBAR_STYLES[0];
+
+  const geom = (style === 'curve')
+    ? buildSplineGeometry(points, closed)
+    : buildFilletGeometry(points, d, closed);
+
+  const group = new Konva.Group();
+  group.add(new Konva.Shape({
+    sceneFunc(ctx) { strokeRebarPath(ctx._context || ctx, geom.path, geom.samples, d, cfg); },
+    listening: false,
+  }));
+  return group;
 }
 
 /* =====================================================
@@ -193,7 +270,7 @@ function orthoSnap(pt, anchor) {
    clamped so it never exceeds half of either adjacent
    segment length.  Returns { path: Path2D, samples }.
    ===================================================== */
-const ORTHO_BEND_FACTOR = 3.5;
+const ORTHO_BEND_FACTOR = 2.0;
 
 function buildOrthoGeometry(points, diam) {
   const STEP = 2;
@@ -209,13 +286,13 @@ function buildOrthoGeometry(points, diam) {
   for (let i = 0; i < n - 1; i++)
     segLen.push(Math.hypot(points[i+1].x - points[i].x, points[i+1].y - points[i].y));
 
-  function sampleLineTo(x0, y0, x1, y1) {
+  function sampleLineTo(x0, y0, x1, y1, ux, uy) {
     const d = Math.hypot(x1-x0, y1-y0);
     if (d < 0.001) return;
     const steps = Math.max(1, Math.ceil(d / STEP));
     for (let s = 1; s <= steps; s++) {
       const t = s / steps;
-      samples.push({ x: x0 + (x1-x0)*t, y: y0 + (y1-y0)*t });
+      samples.push({ x: x0 + (x1-x0)*t, y: y0 + (y1-y0)*t, ux, uy });
     }
   }
 
@@ -225,32 +302,42 @@ function buildOrthoGeometry(points, diam) {
     while (sweep < -Math.PI) sweep += Math.PI * 2;
     if (Math.abs(sweep) < 1e-4) return;
     const steps = Math.max(4, Math.ceil(r * Math.abs(sweep) / STEP));
+    const sign  = sweep > 0 ? 1 : -1;
     for (let s = 1; s <= steps; s++) {
       const a = a0 + sweep * (s / steps);
-      samples.push({ x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r });
+      samples.push({
+        x: cx + Math.cos(a)*r, y: cy + Math.sin(a)*r,
+        ux: -Math.sin(a)*sign, uy:  Math.cos(a)*sign,
+      });
     }
   }
 
   path.moveTo(points[0].x, points[0].y);
-  samples.push({ x: points[0].x, y: points[0].y });
+  const _sd0 = segLen[0] || 1;
+  samples.push({
+    x: points[0].x, y: points[0].y,
+    ux: (points[1].x - points[0].x) / _sd0,
+    uy: (points[1].y - points[0].y) / _sd0,
+  });
   let curX = points[0].x, curY = points[0].y;
 
   for (let i = 0; i < n - 1; i++) {
-    const P0 = points[i];
-    const P1 = points[i + 1];
+    const P0  = points[i];
+    const P1  = points[i + 1];
+    const d1  = segLen[i];
+    const u1x = (P1.x - P0.x) / d1, u1y = (P1.y - P0.y) / d1;
 
     if (i === n - 2) {
       /* last segment straight to end, no arc after */
       path.lineTo(P1.x, P1.y);
-      sampleLineTo(curX, curY, P1.x, P1.y);
+      sampleLineTo(curX, curY, P1.x, P1.y, u1x, u1y);
       break;
     }
 
     const P2 = points[i + 2];
     const r  = Math.min(R, segLen[i] / 2, segLen[i+1] / 2);
 
-    const d1 = segLen[i], d2 = segLen[i+1];
-    const u1x = (P1.x - P0.x) / d1, u1y = (P1.y - P0.y) / d1;
+    const d2  = segLen[i+1];
     const u2x = (P2.x - P1.x) / d2, u2y = (P2.y - P1.y) / d2;
     const T1  = { x: P1.x - u1x * r, y: P1.y - u1y * r };
     const T2  = { x: P1.x + u2x * r, y: P1.y + u2y * r };
@@ -262,7 +349,7 @@ function buildOrthoGeometry(points, diam) {
     const a1  = Math.atan2(T2.y - acy, T2.x - acx);
 
     path.lineTo(T1.x, T1.y);
-    sampleLineTo(curX, curY, T1.x, T1.y);
+    sampleLineTo(curX, curY, T1.x, T1.y, u1x, u1y);
 
     path.arcTo(P1.x, P1.y, P2.x, P2.y, r);
     sampleArcTo(acx, acy, r, a0, a1);
@@ -336,13 +423,8 @@ function drawRibsAlongSamples(ctx, samples, diam, cfg) {
   const ribW      = diam * cfg.ribWidth;
   const ribAngRad = cfg.ribAngle * Math.PI / 180;
 
-  const tangents = [];
-  for (let i = 0; i < samples.length; i++) {
-    const i0 = Math.max(0, i - 3), i1 = Math.min(samples.length - 1, i + 3);
-    const dx = samples[i1].x - samples[i0].x, dy = samples[i1].y - samples[i0].y;
-    const len = Math.hypot(dx, dy);
-    tangents.push(len > 0.001 ? { ux: dx/len, uy: dy/len } : { ux: 1, uy: 0 });
-  }
+  /* tangents are now baked into each sample as {ux, uy} — no smoothing window
+     needed, direction is exact at every point including arc/straight junctions */
 
   let dist = sp * 0.4, ribIndex = 0;
   ctx.save();
@@ -359,7 +441,14 @@ function drawRibsAlongSamples(ctx, samples, diam, cfg) {
       const t  = 1 - dist / segLen;
       const px = prev.x + (curr.x - prev.x) * t;
       const py = prev.y + (curr.y - prev.y) * t;
-      const { ux, uy } = tangents[i];
+
+      /* interpolate tangent between the two samples */
+      const lerpT = Math.max(0, Math.min(1, t));
+      let ux = prev.ux + (curr.ux - prev.ux) * lerpT;
+      let uy = prev.uy + (curr.uy - prev.uy) * lerpT;
+      const tlen = Math.hypot(ux, uy);
+      if (tlen > 0.001) { ux /= tlen; uy /= tlen; } else { ux = 1; uy = 0; }
+
       const flip    = (cfg.alternate && ribIndex % 2 === 0) ? 1 : -1;
       const rAngle  = Math.atan2(uy, ux) +
         (cfg.ribAngle === 90 ? Math.PI/2 : ribAngRad * flip);
@@ -388,92 +477,51 @@ function drawRibsAlongSamples(ctx, samples, diam, cfg) {
 }
 
 /* =====================================================
-   LEGACY CANVAS2D API  (used by drawShapeDiagram which
-   renders to an off-screen canvas for the thumbnail)
+   CANVAS2D API  (used by drawShapeDiagram for thumbnails)
+   All three share strokeRebarPath — geometry differs.
    ===================================================== */
+function _ctx2dCfg() {
+  const style = window._drawerActiveStyle || 'tor';
+  return REBAR_STYLES.find(s => s.id === style) || REBAR_STYLES[0];
+}
+
+/* free-form curve: Catmull-Rom spline */
 function drawRebarPath(ctx, points, diam, closed) {
-  _drawRebarCtx(ctx, points, diam, closed, CURVE_TENSION);
+  if (!points || points.length < 2) return;
+  const d = Math.max(diam || 14, 4);
+  const { path, samples } = buildSplineGeometry(points, closed);
+  strokeRebarPath(ctx, path, samples, d, _ctx2dCfg());
 }
+
+/* bend/ortho: fillet geometry (any angle) */
 function drawRebarStraight(ctx, points, diam, closed) {
-  /* Use exact ortho geometry (straight segs + arc fillets), not tension curve */
   if (!points || points.length < 2) return;
-  const d    = Math.max(diam || 14, 4);
-  const style= window._drawerActiveStyle || 'tor';
-  const cfg  = REBAR_STYLES.find(s => s.id === style) || REBAR_STYLES[0];
-  const pts  = closed ? [...points, points[0]] : points;
-  const { path, samples } = buildOrthoGeometry(pts, d);
-
-  ctx.save();
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = GRAY.body; ctx.lineWidth = d; ctx.stroke(path);
-  ctx.strokeStyle = GRAY.hi;   ctx.lineWidth = d * 0.28;
-  ctx.shadowColor = GRAY.hi;   ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = -d * 0.32; ctx.shadowBlur = 0;
-  ctx.stroke(path);
-  ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
-  if (cfg.ribSpacing > 0 && d >= 5) drawRibsAlongSamples(ctx, samples, d, cfg);
-  ctx.strokeStyle = GRAY.edge; ctx.lineWidth = 0.8; ctx.stroke(path);
-  ctx.restore();
+  const d   = Math.max(diam || 14, 4);
+  const pts = closed ? [...points, points[0]] : points;
+  const { path, samples } = buildFilletGeometry(pts, d, false);
+  strokeRebarPath(ctx, path, samples, d, _ctx2dCfg());
 }
+
+/* plain polyline: no fillet, no spline */
 function drawRebarStraightPolyline(ctx, points, diam, closed) {
-  _drawRebarCtx(ctx, points, diam, closed, 0);
-}
-
-function _drawRebarCtx(ctx, points, diam, closed, tension) {
   if (!points || points.length < 2) return;
   const d    = Math.max(diam || 14, 4);
-  const style= window._drawerActiveStyle || 'tor';
-  const cfg  = REBAR_STYLES.find(s => s.id === style) || REBAR_STYLES[0];
-
-  const path    = _buildPath2D(points, tension, closed);
-  const samples = sampleKonvaLine(points, tension * 0.5 /* Konva internal */, closed);
-
-  ctx.save();
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-
-  ctx.strokeStyle = GRAY.body; ctx.lineWidth = d; ctx.stroke(path);
-
-  ctx.strokeStyle = GRAY.hi; ctx.lineWidth = d * 0.28;
-  ctx.shadowColor = GRAY.hi; ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = -d * 0.32; ctx.shadowBlur = 0;
-  ctx.stroke(path);
-  ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
-
-  if (cfg.ribSpacing > 0 && d >= 5) drawRibsAlongSamples(ctx, samples, d, cfg);
-
-  ctx.strokeStyle = GRAY.edge; ctx.lineWidth = 0.8; ctx.stroke(path);
-  ctx.restore();
-}
-
-/* Build a Path2D from points using Catmull-Rom tension (matches Konva) */
-function _buildPath2D(points, tension, closed) {
-  const T = (tension || 0) * 0.5;
-  const n = points.length;
   const path = new Path2D();
-  path.moveTo(points[0].x, points[0].y);
-
-  if (T === 0) {
-    const pts = closed ? [...points, points[0]] : points;
-    for (let i = 1; i < pts.length; i++) path.lineTo(pts[i].x, pts[i].y);
-    if (closed) path.closePath();
-    return path;
+  const pts  = closed ? [...points, points[0]] : points;
+  path.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) path.lineTo(pts[i].x, pts[i].y);
+  /* samples: linear interpolation along segments */
+  const STEP = 2;
+  const samples = [{ x: pts[0].x, y: pts[0].y }];
+  for (let i = 1; i < pts.length; i++) {
+    const x0=pts[i-1].x, y0=pts[i-1].y, x1=pts[i].x, y1=pts[i].y;
+    const steps = Math.max(1, Math.ceil(Math.hypot(x1-x0, y1-y0) / STEP));
+    for (let s = 1; s <= steps; s++) {
+      const t = s/steps;
+      samples.push({ x: x0+(x1-x0)*t, y: y0+(y1-y0)*t });
+    }
   }
-
-  const pts = closed
-    ? [...points, points[0], points[1]]
-    : [points[0], ...points, points[n-1]];
-  const segCount = closed ? n : n - 1;
-
-  for (let i = 0; i < segCount; i++) {
-    const P0=pts[i], P1=pts[i+1], P2=pts[i+2], P3=pts[i+3]||pts[i+2];
-    path.bezierCurveTo(
-      P1.x + T*(P2.x-P0.x), P1.y + T*(P2.y-P0.y),
-      P2.x - T*(P3.x-P1.x), P2.y - T*(P3.y-P1.y),
-      P2.x, P2.y
-    );
-  }
-  if (closed) path.closePath();
-  return path;
+  strokeRebarPath(ctx, path, samples, d, _ctx2dCfg());
 }
 
 /* =====================================================
@@ -515,21 +563,69 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
   }
 
   if (def.generator==='circle') {
-    const rr=Math.min(sw,sh)/2-10, pts=[];
-    for(let i=0;i<72;i++){const a=i/72*Math.PI*2; pts.push({x:cx+Math.cos(a)*rr,y:cy+Math.sin(a)*rr});}
-    drawRebarPath(ctx,pts,d,true);
+    const rr=Math.min(sw,sh)/2-14, pts=[];
+    /* ring with a small overlap so the two ends are visible (real tie bar) */
+    const gap = 0.12;                       // radians of opening at the top
+    const start = -Math.PI/2 + gap/2;
+    const end   =  Math.PI*1.5 - gap/2;
+    const steps = 84;
+    for(let i=0;i<=steps;i++){
+      const a = start + (end-start)*(i/steps);
+      pts.push({x:cx+Math.cos(a)*rr, y:cy+Math.sin(a)*rr});
+    }
+    /* small straight hook tails at both ends, bent inward */
+    const tail = d*2.2;
+    const a0=start, a1=end;
+    const h0={x:cx+Math.cos(a0)*rr, y:cy+Math.sin(a0)*rr};
+    const h1={x:cx+Math.cos(a1)*rr, y:cy+Math.sin(a1)*rr};
+    const ring = pts.slice();
+    /* prepend/append inward tails (toward centre) */
+    ring.unshift({x:h0.x+(cx-h0.x)/rr*tail, y:h0.y+(cy-h0.y)/rr*tail});
+    ring.push({x:h1.x+(cx-h1.x)/rr*tail, y:h1.y+(cy-h1.y)/rr*tail});
+    drawRebarPath(ctx, ring, d, false);
     (def.dims||[]).forEach(dm=>drawDim(ctx,cx,cy,cx+rr,cy,dm.label));
     return;
   }
   if (def.generator==='spiral') {
-    const rr=Math.min(sw,sh)/2-12, turns=def.turns||3, pts=[];
-    for(let i=0;i<=turns*72;i++){const t=i/(turns*72),a=t*Math.PI*2*turns;
-      pts.push({x:cx+Math.cos(a)*rr*(0.2+0.8*t),y:cy+Math.sin(a)*rr*(0.2+0.8*t)});}
+    /* 3D isometric helix — a coil viewed at an angle */
+    const turns = def.turns||4;
+    const coils = turns;
+    const rx    = Math.min(sw,sh)*0.34;     // horizontal radius (ellipse for iso)
+    const ry    = rx*0.42;                  // vertical squash (viewing angle)
+    const pitch = (sh*0.78)/coils;          // vertical rise per turn
+    const segs  = coils*64;
+    const topY  = cy - (coils*pitch)/2;
+    const pts=[];
+    for(let i=0;i<=segs;i++){
+      const t=i/segs, a=t*Math.PI*2*coils;
+      pts.push({
+        x: cx + Math.cos(a)*rx,
+        y: topY + t*coils*pitch + Math.sin(a)*ry,
+      });
+    }
+    /* draw with depth cue: back half slightly thinner is overkill; just stroke whole helix */
     ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
-    const stroke=(col,w,oy)=>{ctx.strokeStyle=col;ctx.lineWidth=w;if(oy){ctx.shadowOffsetY=oy;ctx.shadowColor=GRAY.hi;ctx.shadowBlur=0;}ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));ctx.stroke();ctx.shadowOffsetY=0;ctx.shadowColor='transparent';};
-    stroke(GRAY.body,d,0); stroke(GRAY.hi,d*0.28,-d*0.32); stroke(GRAY.edge,0.8,0);
-    ctx.restore();
-    (def.dims||[]).forEach(dm=>drawDim(ctx,cx-rr,cy,cx+rr,cy,dm.label));
+    const stroke=(col,w,oy)=>{
+      ctx.strokeStyle=col; ctx.lineWidth=w;
+      if(oy){ctx.shadowOffsetY=oy;ctx.shadowColor=GRAY.hi;ctx.shadowBlur=0;}
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+      pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y)); ctx.stroke();
+      ctx.shadowOffsetY=0; ctx.shadowColor='transparent';
+    };
+    stroke(GRAY.body,d,0); stroke(GRAY.hi,d*0.28,-d*0.3); stroke(GRAY.edge,0.8,0);
+    /* top & bottom ellipse guides (dashed) to read it as 3D */
+    ctx.setLineDash([4,4]); ctx.strokeStyle='#bbb'; ctx.lineWidth=1;
+    [topY, topY+coils*pitch].forEach(yc=>{
+      ctx.beginPath();
+      for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;
+        const x=cx+Math.cos(a)*rx, y=yc+Math.sin(a)*ry;
+        i?ctx.lineTo(x,y):ctx.moveTo(x,y);}
+      ctx.stroke();
+    });
+    ctx.setLineDash([]); ctx.restore();
+    /* diameter + pitch dims */
+    drawDim(ctx, cx-rx, topY, cx+rx, topY, '⌀');
+    drawDim(ctx, cx+rx+18, topY, cx+rx+18, topY+pitch, 'p');
     return;
   }
 
@@ -563,30 +659,195 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
   });
 }
 
-/* Dimension line helper — unchanged */
-function drawDim(ctx,x1,y1,x2,y2,label) {
-  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
-  if(len<4)return;
+/* =====================================================
+   DIMENSION RENDERERS
+   Three types: aligned, angular, leader.
+   All work on raw canvas2d context (also used via
+   Konva.Shape sceneFunc for Konva rendering).
+   ===================================================== */
+
+/* ── shared helpers ── */
+function _dimArrow(ctx, px, py, ax, ay, flip) {
+  const aw=9, ah=3.5;
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px - ax*aw*flip + ay*ah*flip, py - ay*aw*flip - ax*ah*flip);
+  ctx.lineTo(px - ax*aw*flip - ay*ah*flip, py - ay*aw*flip + ax*ah*flip);
+  ctx.closePath(); ctx.fill();
+}
+
+function _dimLabel(ctx, mx, my, label, angle) {
   ctx.save();
-  ctx.strokeStyle=GRAY.dim; ctx.fillStyle=GRAY.dim; ctx.lineWidth=1.2;
-  ctx.setLineDash([5,3]);
-  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-  ctx.setLineDash([]);
-  const ax=dx/len,ay=dy/len,aw=8,ah=3.5;
-  for(const[px,py,flip]of[[x1,y1,-1],[x2,y2,1]]){
-    ctx.beginPath();
-    ctx.moveTo(px,py);
-    ctx.lineTo(px-ax*aw*flip+ay*ah*flip,py-ay*aw*flip-ax*ah*flip);
-    ctx.lineTo(px-ax*aw*flip-ay*ah*flip,py-ay*aw*flip+ax*ah*flip);
-    ctx.closePath(); ctx.fill();
-  }
-  const mx=(x1+x2)/2,my=(y1+y2)/2;
-  ctx.font='bold 11px ui-monospace,Consolas,monospace';
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  const tw=ctx.measureText(label).width+6;
-  ctx.fillStyle='#fff'; ctx.fillRect(mx-tw/2,my-9,tw,18);
-  ctx.fillStyle=GRAY.dim; ctx.fillText(label,mx,my);
+  ctx.font = 'bold 11px ui-monospace,Consolas,monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(label).width + 8;
+  ctx.translate(mx, my);
+  // Keep text readable — flip if angle would render upside-down
+  const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+  const rot = (a > Math.PI/2 && a < Math.PI*1.5) ? angle + Math.PI : angle;
+  ctx.rotate(rot);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-tw/2, -9, tw, 18);
+  ctx.fillStyle = GRAY.dim;
+  ctx.fillText(label, 0, 0);
   ctx.restore();
+}
+
+/* ── 1. ALIGNED dimension — true point-to-point distance ──
+   Clicks: p1, p2, then offset (perpendicular side).
+   Renders: two extension lines + one dimension line with arrows + label. */
+function drawDimAligned(ctx, p1, p2, offset, label) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 4) return;
+  const ax = dx/len, ay = dy/len;   // along dimension line
+  const nx = -ay,   ny =  ax;       // perpendicular (normal)
+
+  // offset = signed perpendicular distance from p1–p2 line to dim line
+  const off = offset != null ? offset : 30;
+
+  const d1 = { x: p1.x + nx*off, y: p1.y + ny*off };
+  const d2 = { x: p2.x + nx*off, y: p2.y + ny*off };
+
+  ctx.save();
+  ctx.strokeStyle = GRAY.dim; ctx.fillStyle = GRAY.dim; ctx.lineWidth = 1.2;
+
+  // Extension lines (slightly past the dim line)
+  const ext = 6;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(p1.x + nx*(off > 0 ? 3 : off-ext), p1.y + ny*(off > 0 ? 3 : off-ext));
+  ctx.lineTo(d1.x + nx*ext, d1.y + ny*ext);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(p2.x + nx*(off > 0 ? 3 : off-ext), p2.y + ny*(off > 0 ? 3 : off-ext));
+  ctx.lineTo(d2.x + nx*ext, d2.y + ny*ext);
+  ctx.stroke();
+
+  // Dimension line
+  ctx.beginPath(); ctx.moveTo(d1.x, d1.y); ctx.lineTo(d2.x, d2.y); ctx.stroke();
+
+  // Arrows
+  _dimArrow(ctx, d1.x, d1.y, ax, ay, -1);
+  _dimArrow(ctx, d2.x, d2.y, ax, ay,  1);
+
+  // Label at midpoint, rotated along dim line
+  const mx = (d1.x+d2.x)/2, my = (d1.y+d2.y)/2;
+  const ang = Math.atan2(dy, dx);
+  _dimLabel(ctx, mx, my - ny*8, label, ang);
+
+  ctx.restore();
+}
+
+/* ── 2. ANGULAR dimension — angle at a vertex between two arms ──
+   Clicks: vertex, arm-A end, arm-B end.
+   Renders: arc + two radial lines from vertex + angle label. */
+function drawDimAngular(ctx, vertex, ptA, ptB, label) {
+  const rA = Math.hypot(ptA.x-vertex.x, ptA.y-vertex.y);
+  const rB = Math.hypot(ptB.x-vertex.x, ptB.y-vertex.y);
+  const r  = Math.min(rA, rB, 60) * 0.72 + 20;  // arc radius
+
+  const aA = Math.atan2(ptA.y-vertex.y, ptA.x-vertex.x);
+  const aB = Math.atan2(ptB.y-vertex.y, ptB.x-vertex.x);
+
+  // Sweep the short way
+  let sweep = aB - aA;
+  while (sweep >  Math.PI) sweep -= Math.PI*2;
+  while (sweep < -Math.PI) sweep += Math.PI*2;
+  const aEnd = aA + sweep;
+
+  // Angle value in degrees for label (if label is empty/auto)
+  const angleDeg = Math.abs(sweep * 180 / Math.PI).toFixed(1) + '°';
+  const lbl = label || angleDeg;
+
+  ctx.save();
+  ctx.strokeStyle = GRAY.dim; ctx.fillStyle = GRAY.dim; ctx.lineWidth = 1.2;
+
+  // Radial tick lines from vertex to arc edge
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(vertex.x, vertex.y);
+  ctx.lineTo(vertex.x + Math.cos(aA)*r*1.25, vertex.y + Math.sin(aA)*r*1.25);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(vertex.x, vertex.y);
+  ctx.lineTo(vertex.x + Math.cos(aEnd)*r*1.25, vertex.y + Math.sin(aEnd)*r*1.25);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arc
+  ctx.beginPath();
+  ctx.arc(vertex.x, vertex.y, r, aA, aEnd, sweep < 0);
+  ctx.stroke();
+
+  // Arrow at arc end
+  const arrowAng = aEnd + (sweep > 0 ? Math.PI/2 : -Math.PI/2);
+  const arrowPx = vertex.x + Math.cos(aEnd)*r;
+  const arrowPy = vertex.y + Math.sin(aEnd)*r;
+  _dimArrow(ctx, arrowPx, arrowPy, Math.cos(arrowAng), Math.sin(arrowAng), 1);
+
+  // Label at arc midpoint
+  const aMid = aA + sweep/2;
+  _dimLabel(ctx, vertex.x + Math.cos(aMid)*(r+18), vertex.y + Math.sin(aMid)*(r+18), lbl, aMid + Math.PI/2);
+
+  // Vertex dot
+  ctx.beginPath(); ctx.arc(vertex.x, vertex.y, 3, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+/* ── 3. LEADER dimension — annotated leader line ──
+   Clicks: origin (arrowhead tip), elbow point, (optional) text anchor.
+   Two-segment kinked line ending in a short horizontal text shelf. */
+function drawDimLeader(ctx, origin, elbow, textPt, label) {
+  const lbl = label || 'Label';
+
+  ctx.save();
+  ctx.strokeStyle = GRAY.dim; ctx.fillStyle = GRAY.dim; ctx.lineWidth = 1.2;
+  ctx.setLineDash([]);
+
+  // Shaft: origin → elbow
+  ctx.beginPath();
+  ctx.moveTo(origin.x, origin.y);
+  ctx.lineTo(elbow.x, elbow.y);
+  ctx.stroke();
+
+  // Shelf: elbow → textPt (horizontal by convention, but use the actual point)
+  if (textPt) {
+    ctx.beginPath();
+    ctx.moveTo(elbow.x, elbow.y);
+    ctx.lineTo(textPt.x, textPt.y);
+    ctx.stroke();
+  }
+
+  // Arrowhead at origin pointing toward elbow
+  const dx = elbow.x - origin.x, dy = elbow.y - origin.y;
+  const len = Math.hypot(dx, dy);
+  if (len > 4) {
+    const ax = dx/len, ay = dy/len;
+    _dimArrow(ctx, origin.x, origin.y, ax, ay, -1);
+  }
+
+  // Label: placed at textPt (or above elbow if no textPt yet)
+  const tx = textPt ? textPt.x : elbow.x + 20;
+  const ty = textPt ? textPt.y : elbow.y;
+  ctx.font = 'bold 11px ui-monospace,Consolas,monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(lbl).width + 8;
+  ctx.fillStyle = '#fff'; ctx.fillRect(tx + 2, ty - 9, tw, 18);
+  ctx.fillStyle = GRAY.dim; ctx.fillText(lbl, tx + 6, ty);
+
+  // Underline shelf
+  ctx.beginPath();
+  ctx.moveTo(tx + 2, ty + 9); ctx.lineTo(tx + 2 + tw, ty + 9);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/* Legacy wrapper — used by shape library diagram renders (shapes.json dims) */
+function drawDim(ctx,x1,y1,x2,y2,label) {
+  drawDimAligned(ctx, {x:x1,y:y1}, {x:x2,y:y2}, -28, label||'');
 }
 
 /* =====================================================
@@ -619,7 +880,10 @@ const drawerHTML = `
         <button class="btn small ghost drawer-tool" data-tool="rect"        title="Click-drag to draw rectangle">▭ Rectangle</button>
         <button class="btn small ghost drawer-tool" data-tool="circle"      title="Click-drag to draw ellipse">◯ Circle / Stirrup</button>
         <button class="btn small ghost drawer-tool" data-tool="text"        title="Click canvas to place label">T Annotation</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim"         title="Two clicks to place dimension">↔ Dimension</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-aligned" title="Aligned dimension: click two points, then click to set offset · measures true distance">↔ Dim: Aligned</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-angular" title="Angular dimension: click vertex, then two arm points · measures angle between them">∠ Dim: Angular</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-leader"  title="Leader: click origin, then elbow, then text anchor · places an annotation leader line">↗ Dim: Leader</button>
+        <button class="btn small ghost drawer-tool" data-tool="edit-points" title="Drag existing anchor points to reposition them · Click elsewhere to deselect">✦ Edit Points</button>
       </div>
 
       <!-- Path-tool hint -->
@@ -642,6 +906,21 @@ const drawerHTML = `
         <input type="range" id="drawerBarSize" min="6" max="38" value="16" style="flex:1">
         <span id="drawerBarVal" style="font-size:11px;min-width:22px;color:var(--brand);font-weight:700">16</span>
         <span style="font-size:10px;color:var(--muted)">px</span>
+      </div>
+
+      <div style="height:1px;background:var(--border)"></div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Grid</div>
+      <div style="display:flex;align-items:center;gap:7px">
+        <button id="drawerGridToggle" class="btn small ghost" style="font-size:11px;flex:1;text-align:left;padding:5px 8px">
+          ▦ Show Grid
+        </button>
+      </div>
+      <div id="drawerGridSpacingRow" style="display:none;flex-direction:column;gap:3px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:10px;color:var(--muted)">Spacing</span>
+          <span style="font-size:11px;color:var(--brand);font-weight:700"><span id="drawerGridSpacingVal">50</span> px</span>
+        </div>
+        <input type="range" id="drawerGridSpacing" min="10" max="100" step="5" value="50" style="width:100%;margin:0;display:block">
       </div>
 
       <div style="height:1px;background:var(--border)"></div>
@@ -707,8 +986,26 @@ let bezierMode     = false;
 let bezierStartIdx = -1;
 
 let dragStart   = null;
-let dimPhase    = 0;
-let dimStart    = null;
+
+/* ── Dimension tool state (shared across all three dim types) ── */
+let dimPhase    = 0;      // which click we're waiting for (0 = idle)
+let dimPts      = [];     // accumulated clicks for current dim in progress
+
+/* ── Edit-points mode state ── */
+let editDragCmd   = null;   // reference to the history cmd being edited
+let editDragIdx   = null;   // index into cmd.points[]
+let editDragging  = false;  // mouse is held on a handle
+let _stageResizeObserver = null;
+
+/* ── Grid state ── */
+let _gridVisible  = false;
+let _gridSpacing  = 50;     // px between grid lines (matches the select options)
+
+/* double-click detection (timestamp-based, works for mouse + touch) */
+let _lastDownTime = 0;
+let _lastDownPt   = null;
+const DBL_MS   = 350;   // max ms between clicks to count as double
+const DBL_PX   = 12;    // max pixel drift between the two clicks
 
 window._drawerActiveStyle = 'tor';
 
@@ -724,9 +1021,12 @@ function getXY(e) {
   const rect = container.getBoundingClientRect();
   const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
   const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+  // Use actual rendered size for clamping so the full canvas area is reachable
+  const w = rect.width  || _stageW;
+  const h = rect.height || _stageH;
   return {
-    x: Math.max(0, Math.min(_stageW, cx)),
-    y: Math.max(0, Math.min(_stageH, cy)),
+    x: Math.max(0, Math.min(w, cx)),
+    y: Math.max(0, Math.min(h, cy)),
   };
 }
 
@@ -855,6 +1155,94 @@ function showExportPanel(jsonText, id) {
 }
 
 /* =====================================================
+   GRID RENDERER
+   Draws a measurement grid behind the rebar drawing.
+   Major lines every 5 cells, minor lines every cell.
+   Grid is screen-only — it is excluded from the PNG
+   export by rendering it on a separate Konva layer
+   that is destroyed before toDataURL() is called.
+   ===================================================== */
+let _gridLayer = null;
+
+function _ensureGridLayer() {
+  if (!_konvaStage) return null;
+  if (!_gridLayer || !_gridLayer.getStage()) {
+    _gridLayer = new Konva.Layer({ listening: false });
+    // Insert below the main drawing layer
+    _konvaStage.add(_gridLayer);
+    _gridLayer.moveToBottom();
+  }
+  return _gridLayer;
+}
+
+function drawGrid() {
+  const gl = _ensureGridLayer();
+  if (!gl) return;
+  gl.destroyChildren();
+  if (!_gridVisible) { gl.draw(); return; }
+
+  const sp   = _gridSpacing;
+  const W    = _stageW;
+  const H    = _stageH;
+
+  // Background (white, always — grid sits on top of it)
+  gl.add(new Konva.Rect({ x:0, y:0, width:W, height:H, fill:'#fff' }));
+
+  const majorEvery = 5;   // every 5th line is a major line
+
+  // Vertical lines
+  for (let xi = 0; xi * sp <= W; xi++) {
+    const x = xi * sp;
+    const isMajor = xi % majorEvery === 0;
+    gl.add(new Konva.Line({
+      points: [x, 0, x, H],
+      stroke: isMajor ? '#b0bec5' : '#dde3ea',
+      strokeWidth: isMajor ? 0.8 : 0.5,
+      listening: false,
+    }));
+    // Label major lines
+    if (isMajor && x > 0) {
+      gl.add(new Konva.Text({
+        x: x + 2, y: 2,
+        text: `${x}`,
+        fontSize: 8,
+        fontFamily: 'ui-monospace,Consolas,monospace',
+        fill: '#90a4ae',
+        listening: false,
+      }));
+    }
+  }
+
+  // Horizontal lines
+  for (let yi = 0; yi * sp <= H; yi++) {
+    const y = yi * sp;
+    const isMajor = yi % majorEvery === 0;
+    gl.add(new Konva.Line({
+      points: [0, y, W, y],
+      stroke: isMajor ? '#b0bec5' : '#dde3ea',
+      strokeWidth: isMajor ? 0.8 : 0.5,
+      listening: false,
+    }));
+    // Label major lines
+    if (isMajor && y > 0) {
+      gl.add(new Konva.Text({
+        x: 2, y: y + 2,
+        text: `${y}`,
+        fontSize: 8,
+        fontFamily: 'ui-monospace,Consolas,monospace',
+        fill: '#90a4ae',
+        listening: false,
+      }));
+    }
+  }
+
+  // Origin dot
+  gl.add(new Konva.Circle({ x:0, y:0, radius:3, fill:'#90a4ae', listening:false }));
+
+  gl.draw();
+}
+
+/* =====================================================
    KONVA REDRAW — replaces canvas2d history redraw
    ===================================================== */
 function redraw() {
@@ -862,8 +1250,12 @@ function redraw() {
   if (!layer) return;
   layer.destroyChildren();
 
-  // White background
-  layer.add(new Konva.Rect({ x:0, y:0, width:_stageW, height:_stageH, fill:'#fff' }));
+  // White background only when grid is off (grid layer paints its own bg)
+  if (!_gridVisible) {
+    layer.add(new Konva.Rect({ x:0, y:0, width:_stageW, height:_stageH, fill:'#fff' }));
+  }
+
+  drawGrid();   // always sync grid layer
 
   for (const cmd of history) renderCmd(cmd, layer);
   layer.draw();
@@ -874,7 +1266,6 @@ function renderCmd(cmd, layer) {
   const d = cmd.diam || getBarSize();
 
   if (cmd.type === 'rebar-path') {
-    const tension = cmd.bezier ? CURVE_TENSION : 0;
     layer.add(makeRebarGroup(cmd.points, d, cmd.bezier?'curve':'straight', cmd.closed||false));
 
   } else if (cmd.type === 'ortho-bar') {
@@ -898,11 +1289,28 @@ function renderCmd(cmd, layer) {
       fill:GRAY.dim,
     }));
 
-  } else if (cmd.type === 'dim') {
-    // Render dim line via Konva custom shape (reuse canvas2d drawDim)
+  } else if (cmd.type === 'dim-aligned') {
     layer.add(new Konva.Shape({
-      sceneFunc(ctx) { drawDim(ctx._context||ctx, cmd.x1,cmd.y1,cmd.x2,cmd.y2,cmd.label); },
-      listening: false,
+      sceneFunc(ctx) {
+        const c = ctx._context||ctx;
+        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot());
+      }, listening: false,
+    }));
+
+  } else if (cmd.type === 'dim-angular') {
+    layer.add(new Konva.Shape({
+      sceneFunc(ctx) {
+        const c = ctx._context||ctx;
+        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'');
+      }, listening: false,
+    }));
+
+  } else if (cmd.type === 'dim-leader') {
+    layer.add(new Konva.Shape({
+      sceneFunc(ctx) {
+        const c = ctx._context||ctx;
+        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot());
+      }, listening: false,
     }));
 
   } else if (cmd.type === 'shape') {
@@ -969,12 +1377,50 @@ function renderGhostFrame(cursorPt) {
       const g=makeRebarGroup(pts,getBarSize(),'curve',true); g.opacity(0.6); layer.add(g);
     }
 
-  } else if (activeTool === 'dim' && dimPhase===1 && dimStart && cursorPt) {
+  } else if (activeTool === 'dim-aligned' && dimPhase >= 1 && cursorPt) {
+    // Phase 1: show ghost line from p1 to cursor; Phase 2: show full aligned dim
+    const p1 = dimPts[0];
+    const p2 = dimPhase === 1 ? cursorPt : dimPts[1];
+    const offset = dimPhase === 2
+      ? _alignedOffset(p1, p2, cursorPt)
+      : -30;
     layer.add(new Konva.Shape({
-      opacity:0.6,
-      sceneFunc(ctx) { drawDim(ctx._context||ctx, dimStart.x,dimStart.y,cursorPt.x,cursorPt.y,getAnnot()); },
-      listening:false,
+      opacity: 0.6,
+      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot()); },
+      listening: false,
     }));
+    // Anchor dots
+    dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
+    layer.add(new Konva.Circle({x:cursorPt.x,y:cursorPt.y,radius:4,fill:'rgba(251,191,36,0.85)',stroke:'#fff',strokeWidth:1.5}));
+
+  } else if (activeTool === 'dim-angular' && dimPhase >= 1 && cursorPt) {
+    const vertex = dimPts[0];
+    const ptA    = dimPhase >= 2 ? dimPts[1] : cursorPt;
+    const ptB    = dimPhase === 2 ? cursorPt : null;
+    if (ptB) {
+      layer.add(new Konva.Shape({
+        opacity: 0.6,
+        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot()); },
+        listening: false,
+      }));
+    } else {
+      // Phase 1 ghost: just a line from vertex to cursor
+      layer.add(new Konva.Line({points:[vertex.x,vertex.y,ptA.x,ptA.y],stroke:'rgba(56,189,248,0.5)',strokeWidth:1.2,dash:[4,3]}));
+    }
+    dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
+    layer.add(new Konva.Circle({x:cursorPt.x,y:cursorPt.y,radius:4,fill:'rgba(251,191,36,0.85)',stroke:'#fff',strokeWidth:1.5}));
+
+  } else if (activeTool === 'dim-leader' && dimPhase >= 1 && cursorPt) {
+    const origin = dimPts[0];
+    const elbow  = dimPhase >= 2 ? dimPts[1] : cursorPt;
+    const textPt = dimPhase === 2 ? cursorPt : null;
+    layer.add(new Konva.Shape({
+      opacity: 0.6,
+      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot()); },
+      listening: false,
+    }));
+    dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
+    layer.add(new Konva.Circle({x:cursorPt.x,y:cursorPt.y,radius:4,fill:'rgba(251,191,36,0.85)',stroke:'#fff',strokeWidth:1.5}));
   }
 
   layer.draw();
@@ -1016,21 +1462,147 @@ function commitRebarPath() {
 
 function cancelPath() {
   isDrawing=false; livePts=[]; mousePos=null; bezierMode=false; bezierStartIdx=-1;
+  _lastDownTime=0; _lastDownPt=null;
   updateNodeCounter(0); showPathHint(false); redraw();
+}
+
+/* ── Signed perpendicular offset from cursor to the p1-p2 line ── */
+function _alignedOffset(p1, p2, cursor) {
+  const dx = p2.x-p1.x, dy = p2.y-p1.y;
+  const len = Math.hypot(dx,dy);
+  if (len < 1) return 30;
+  // Normal vector (pointing left of direction p1→p2)
+  const nx = -dy/len, ny = dx/len;
+  // Project cursor onto normal
+  return (cursor.x-p1.x)*nx + (cursor.y-p1.y)*ny;
+}
+
+/* =====================================================
+   EDIT-POINTS MODE — collect all draggable handles from
+   history commands that carry a .points[] array.
+   ===================================================== */
+const EDIT_HANDLE_R = 7; // hit radius in px
+
+function _editHandles() {
+  const handles = [];
+  for (let ci = 0; ci < history.length; ci++) {
+    const cmd = history[ci];
+    if (!cmd.points) continue;
+    for (let pi = 0; pi < cmd.points.length; pi++) {
+      handles.push({ ci, pi, x: cmd.points[pi].x, y: cmd.points[pi].y });
+    }
+  }
+  return handles;
+}
+
+function _hitHandle(pt, handles) {
+  let best = null, bestD = Infinity;
+  for (const h of handles) {
+    const d = Math.hypot(pt.x - h.x, pt.y - h.y);
+    if (d < EDIT_HANDLE_R * 2 && d < bestD) { bestD = d; best = h; }
+  }
+  return best;
+}
+
+function renderEditHandles() {
+  redraw();
+  const layer = getKonvaLayer();
+  const handles = _editHandles();
+  for (const h of handles) {
+    const isActive = editDragCmd !== null &&
+                     history[h.ci] === editDragCmd &&
+                     h.pi === editDragIdx;
+    layer.add(new Konva.Circle({
+      x: h.x, y: h.y,
+      radius: EDIT_HANDLE_R,
+      fill: isActive ? '#f97316' : 'rgba(56,189,248,0.85)',
+      stroke: '#fff',
+      strokeWidth: 2,
+      shadowColor: 'rgba(0,0,0,0.35)',
+      shadowBlur: 4,
+      shadowOffsetY: 1,
+    }));
+  }
+  layer.draw();
 }
 
 /* ── Event handlers wired to Konva stage ── */
 function onDown(e) {
   if (e.button!=null&&e.button===2) return;
-  const pt=getXY(e);
+  const pt  = getXY(e);
+  const now = Date.now();
+
+  /* ── Edit-points mode: start drag if near a handle ── */
+  if (activeTool === 'edit-points') {
+    const hit = _hitHandle(pt, _editHandles());
+    if (hit) {
+      editDragCmd  = history[hit.ci];
+      editDragIdx  = hit.pi;
+      editDragging = true;
+      renderEditHandles();
+    } else {
+      editDragCmd = null; editDragIdx = null; editDragging = false;
+      renderEditHandles();
+    }
+    return;
+  }
+
+  /* ── double-click detection ── */
+  const isDbl = (now - _lastDownTime < DBL_MS) &&
+                (_lastDownPt !== null) &&
+                (Math.hypot(pt.x - _lastDownPt.x, pt.y - _lastDownPt.y) < DBL_PX);
+  _lastDownTime = now;
+  _lastDownPt   = pt;
+
+  if (isDbl && (activeTool==='rebar-path'||activeTool==='ortho-bar') && isDrawing) {
+    /* second click of dblclick: discard the point just added by the first
+       mousedown of this pair (it was already pushed), then commit */
+    if (livePts.length > 1) livePts.pop();
+    commitRebarPath();
+    return;
+  }
 
   if (activeTool==='text') {
     history.push({type:'text',x:pt.x,y:pt.y,text:getAnnot(),size:getFontSize()});
     redraw(); return;
   }
-  if (activeTool==='dim') {
-    if(dimPhase===0){dimPhase=1;dimStart=pt;}
-    else{history.push({type:'dim',x1:dimStart.x,y1:dimStart.y,x2:pt.x,y2:pt.y,label:getAnnot()});dimPhase=0;dimStart=null;redraw();}
+
+  /* ── Aligned dimension: click 1=p1, click 2=p2, click 3=offset side ── */
+  if (activeTool==='dim-aligned') {
+    dimPts.push(pt);
+    if (dimPts.length === 3) {
+      const [p1,p2,offPt] = dimPts;
+      history.push({type:'dim-aligned', p1, p2, offset: _alignedOffset(p1,p2,offPt), label:getAnnot()});
+      dimPhase=0; dimPts=[]; redraw();
+    } else {
+      dimPhase = dimPts.length;
+    }
+    return;
+  }
+
+  /* ── Angular dimension: click 1=vertex, click 2=arm-A, click 3=arm-B ── */
+  if (activeTool==='dim-angular') {
+    dimPts.push(pt);
+    if (dimPts.length === 3) {
+      const [vertex,ptA,ptB] = dimPts;
+      history.push({type:'dim-angular', vertex, ptA, ptB, label:getAnnot()});
+      dimPhase=0; dimPts=[]; redraw();
+    } else {
+      dimPhase = dimPts.length;
+    }
+    return;
+  }
+
+  /* ── Leader: click 1=origin (arrowhead), click 2=elbow, click 3=text anchor ── */
+  if (activeTool==='dim-leader') {
+    dimPts.push(pt);
+    if (dimPts.length === 3) {
+      const [origin,elbow,textPt] = dimPts;
+      history.push({type:'dim-leader', origin, elbow, textPt, label:getAnnot()});
+      dimPhase=0; dimPts=[]; redraw();
+    } else {
+      dimPhase = dimPts.length;
+    }
     return;
   }
   if (activeTool==='rebar-path') {
@@ -1068,12 +1640,27 @@ function onDown(e) {
 
 function onMove(e) {
   const pt=getXY(e); mousePos=pt;
+
+  /* Edit-points drag */
+  if (activeTool === 'edit-points' && editDragging && editDragCmd && editDragIdx !== null) {
+    editDragCmd.points[editDragIdx] = { x: pt.x, y: pt.y };
+    renderEditHandles();
+    return;
+  }
+
   if((activeTool==='rebar-path'||activeTool==='ortho-bar')&&isDrawing) renderGhostFrame(pt);
   else if((activeTool==='rect'||activeTool==='circle')&&dragStart) renderGhostFrame(pt);
-  else if(activeTool==='dim'&&dimPhase===1) renderGhostFrame(pt);
+  else if((activeTool==='dim-aligned'||activeTool==='dim-angular'||activeTool==='dim-leader')&&dimPhase>=1) renderGhostFrame(pt);
 }
 
 function onUp(e) {
+  /* Finish edit-points drag */
+  if (activeTool === 'edit-points' && editDragging) {
+    editDragging = false;
+    renderEditHandles();
+    return;
+  }
+
   if (activeTool==='rect'&&dragStart) {
     const pt=getXY(e);
     history.push({type:'rect',x:dragStart.x,y:dragStart.y,w:pt.x-dragStart.x,h:pt.y-dragStart.y,diam:getBarSize(),style:activeStyle});
@@ -1087,15 +1674,13 @@ function onUp(e) {
   }
 }
 
-function onDblClick(e) {
-  if((activeTool==='rebar-path'||activeTool==='ortho-bar')&&isDrawing){
-    if(livePts.length>1)livePts.pop();
-    commitRebarPath();
-  }
-}
-
 function onKeyDown(e) {
-  if(e.key==='Escape'){if(isDrawing)cancelPath();if(dimPhase===1){dimPhase=0;dimStart=null;redraw();}dragStart=null;}
+  if(e.key==='Escape'){
+    if(isDrawing)cancelPath();
+    if(dimPhase>0){dimPhase=0;dimPts=[];redraw();}
+    dragStart=null;
+    if(activeTool==='edit-points'){editDragCmd=null;editDragIdx=null;editDragging=false;renderEditHandles();}
+  }
   if(e.key==='Enter'&&(activeTool==='rebar-path'||activeTool==='ortho-bar')&&isDrawing) commitRebarPath();
   if((e.key==='b'||e.key==='B')&&activeTool==='rebar-path'&&isDrawing){
     bezierMode=!bezierMode;
@@ -1110,7 +1695,10 @@ function onKeyDown(e) {
 
 function setTool(t) {
   if(isDrawing)cancelPath();
-  dimPhase=0;dimStart=null;dragStart=null;activeTool=t;
+  dimPhase=0; dimPts=[]; dragStart=null;
+  /* reset edit state when switching away */
+  if(t !== 'edit-points') { editDragCmd=null; editDragIdx=null; editDragging=false; }
+  activeTool=t;
   document.querySelectorAll('.drawer-tool').forEach(b=>{
     const on=b.dataset.tool===t;
     b.style.background=on?'var(--brand)':'';
@@ -1118,10 +1706,19 @@ function setTool(t) {
     b.style.fontWeight=on?'700':'';
   });
   const container=document.getElementById('konvaContainer');
-  if(container)container.style.cursor=t==='text'?'text':'crosshair';
+  if(container)container.style.cursor=t==='text'?'text':t==='edit-points'?'default':'crosshair';
   showPathHint(false);
   const hintEl=document.getElementById('canvasHint');
-  if(hintEl)hintEl.textContent=t==='ortho-bar'?'Ortho mode: clicks snap H/V · Dbl-click=finish · Esc=cancel':'Click=add point · B=toggle Bézier · Dbl-click=finish · Esc=cancel · white=print-safe';
+  const hints={
+    'ortho-bar':   'Ortho mode: clicks snap H/V · Dbl-click=finish · Esc=cancel',
+    'edit-points': 'Drag blue handles to move points · Esc to deselect · switch tool when done',
+    'dim-aligned': 'Click 1=start · Click 2=end · Click 3=offset side · Esc=cancel',
+    'dim-angular': 'Click 1=vertex · Click 2=arm A · Click 3=arm B · Esc=cancel',
+    'dim-leader':  'Click 1=arrowhead · Click 2=elbow · Click 3=text anchor · Esc=cancel',
+  };
+  if(hintEl)hintEl.textContent=hints[t]||'Click=add point · B=toggle Bézier · Dbl-click=finish · Esc=cancel · white=print-safe';
+  if(t === 'edit-points') renderEditHandles();
+  else redraw();
 }
 
 function setStyle(s) {
@@ -1137,6 +1734,24 @@ function setStyle(s) {
 /* ── Init ── */
 function initDrawer() {
   const wrap = document.getElementById('svgCanvasWrap');
+
+  // Disconnect any previous observer
+  if (_stageResizeObserver) { _stageResizeObserver.disconnect(); _stageResizeObserver = null; }
+
+  function _resizeStage() {
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    if (!w || !h) return;
+    _stageW = w;
+    _stageH = h;
+    if (_konvaStage) {
+      _konvaStage.width(w);
+      _konvaStage.height(h);
+      if (activeTool === 'edit-points') renderEditHandles();
+      else { drawGrid(); redraw(); }
+    }
+  }
+
   _stageW = wrap.clientWidth  || 700;
   _stageH = wrap.clientHeight || 460;
 
@@ -1144,18 +1759,22 @@ function initDrawer() {
   const konvaEl = document.getElementById('konvaContainer');
   initKonvaStage(konvaEl, _stageW, _stageH);
 
+  // Keep stage in sync with flex container size
+  _stageResizeObserver = new ResizeObserver(() => _resizeStage());
+  _stageResizeObserver.observe(wrap);
+
   // Wire Konva stage events (pointer events — no canvas element needed)
   const stage = _konvaStage;
   stage.off('mousedown touchstart mouseup touchend mousemove touchmove dblclick');
   stage.on('mousedown touchstart', e => { onDown(e.evt); });
   stage.on('mousemove touchmove',  e => { onMove(e.evt); });
   stage.on('mouseup touchend',     e => { onUp(e.evt);   });
-  stage.on('dblclick',             e => { onDblClick(e.evt); });
 
   document.removeEventListener('keydown', onKeyDown);
   document.addEventListener('keydown', onKeyDown);
 
-  history=[]; isDrawing=false; livePts=[]; dragStart=null; dimPhase=0; dimStart=null; mousePos=null; bezierMode=false;
+  history=[]; isDrawing=false; livePts=[]; dragStart=null; dimPhase=0; dimPts=[]; mousePos=null; bezierMode=false;
+  editDragCmd=null; editDragIdx=null; editDragging=false;
   redraw();
 
   document.querySelectorAll('.drawer-tool, .rebar-style-btn, .annot-preset').forEach(b=>{
@@ -1164,7 +1783,10 @@ function initDrawer() {
   document.querySelectorAll('.drawer-tool').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
   document.querySelectorAll('.rebar-style-btn').forEach(b=>b.addEventListener('click',()=>setStyle(b.dataset.style)));
   document.querySelectorAll('.annot-preset').forEach(b=>b.addEventListener('click',()=>{
-    document.getElementById('drawerAnnotText').value=b.dataset.text; setTool('text');
+    document.getElementById('drawerAnnotText').value=b.dataset.text;
+    // Preserve text or any dim tool — only auto-switch if on a drawing/shape tool
+    const isDimOrText = activeTool==='text'||activeTool==='dim-aligned'||activeTool==='dim-angular'||activeTool==='dim-leader';
+    if(!isDimOrText) setTool('text');
   }));
 
   document.getElementById('drawerBarSize').addEventListener('input',e=>{
@@ -1182,6 +1804,37 @@ function initDrawer() {
   };
   document.getElementById('drawerClear').onclick=()=>{cancelPath();history=[];redraw();};
   document.getElementById('drawerExport').onclick=()=>{if(isDrawing)commitRebarPath();exportDrawnShape();};
+
+  /* ── Grid controls ── */
+  const gridToggleBtn   = document.getElementById('drawerGridToggle');
+  const gridSpacingRow  = document.getElementById('drawerGridSpacingRow');
+  const gridSpacingEl   = document.getElementById('drawerGridSpacing');
+  const gridSpacingVal  = document.getElementById('drawerGridSpacingVal');
+
+  function _syncGridBtn() {
+    gridToggleBtn.textContent = _gridVisible ? '▦ Hide Grid' : '▦ Show Grid';
+    gridToggleBtn.style.background    = _gridVisible ? 'var(--brand)' : '';
+    gridToggleBtn.style.color         = _gridVisible ? '#05131f' : '';
+    gridToggleBtn.style.fontWeight    = _gridVisible ? '700' : '';
+    gridToggleBtn.style.borderColor   = _gridVisible ? 'var(--brand)' : '';
+    gridSpacingRow.style.display      = _gridVisible ? 'flex' : 'none';
+  }
+
+  gridToggleBtn.onclick = () => {
+    _gridVisible = !_gridVisible;
+    _syncGridBtn();
+    redraw();
+  };
+
+  gridSpacingEl.value = String(_gridSpacing);
+  if (gridSpacingVal) gridSpacingVal.textContent = String(_gridSpacing);
+  gridSpacingEl.addEventListener('input', () => {
+    _gridSpacing = parseInt(gridSpacingEl.value, 10);
+    if (gridSpacingVal) gridSpacingVal.textContent = String(_gridSpacing);
+    if (_gridVisible) redraw();
+  });
+
+  _syncGridBtn();   // reflect current state if re-opened
 
   setTool('rebar-path'); setStyle('tor');
 }
@@ -1243,10 +1896,26 @@ function populateQuickShapes(){
   if(loadBtn)loadBtn.onclick=manualLoadShapesJson;
 }
 
-/* ── Export canvas as PNG (for "Use Shape") ── */
+/* ── Export canvas as PNG (for "Use Shape") — grid excluded ── */
 function exportToPNG() {
-  // Use Konva's built-in toDataURL
-  return _konvaStage ? _konvaStage.toDataURL({ mimeType:'image/png' }) : '';
+  if (!_konvaStage) return '';
+  // Temporarily hide the grid layer so it doesn't appear in the export
+  if (_gridLayer) _gridLayer.hide();
+  // Ensure white background is drawn for the export
+  const layer = getKonvaLayer();
+  if (layer) {
+    const bg = new Konva.Rect({ x:0, y:0, width:_stageW, height:_stageH, fill:'#fff' });
+    layer.add(bg); bg.moveToBottom(); layer.draw();
+    const dataURL = _konvaStage.toDataURL({ mimeType:'image/png' });
+    bg.destroy(); layer.draw();
+    if (_gridLayer) _gridLayer.show();
+    drawGrid();
+    return dataURL;
+  }
+  const dataURL = _konvaStage.toDataURL({ mimeType:'image/png' });
+  if (_gridLayer) _gridLayer.show();
+  drawGrid();
+  return dataURL;
 }
 
 window.ShapeDrawer = {
@@ -1260,12 +1929,14 @@ window.ShapeDrawer = {
     document.getElementById('drawerDone').onclick=()=>{
       if(isDrawing)commitRebarPath();
       dlg.close();
+      if(_stageResizeObserver){_stageResizeObserver.disconnect();_stageResizeObserver=null;}
       if(drawerCallback)drawerCallback(exportToPNG());
       document.removeEventListener('keydown',onKeyDown);
     };
     document.getElementById('drawerCancel').onclick=()=>{
       cancelPath(); dlg.close();
       document.removeEventListener('keydown',onKeyDown);
+      if(_stageResizeObserver){_stageResizeObserver.disconnect();_stageResizeObserver=null;}
     };
   }
 };
