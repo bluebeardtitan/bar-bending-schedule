@@ -1957,8 +1957,11 @@ async function loadShapeLibrary() {
 function applyShapeList(list,sourceLabel){
   const clean=(list||[]).filter(s=>s&&s.id);
   if(!clean.length){alert('No valid shapes found in '+(sourceLabel||'file')+'.');return false;}
-  window.SHAPE_LIB_LIST=clean; window.SHAPE_LIB={};
-  clean.forEach(s=>{window.SHAPE_LIB[s.id]=s;}); populateQuickShapes(); return true;
+  // Merge into existing library: update matching IDs, append new ones
+  const merged=[...(window.SHAPE_LIB_LIST||[])];
+  clean.forEach(s=>{const i=merged.findIndex(e=>e.id===s.id);if(i>=0)merged[i]=s;else merged.push(s);});
+  window.SHAPE_LIB_LIST=merged; window.SHAPE_LIB={};
+  merged.forEach(s=>{window.SHAPE_LIB[s.id]=s;}); populateQuickShapes(); return true;
 }
 
 function manualLoadShapesJson(){
