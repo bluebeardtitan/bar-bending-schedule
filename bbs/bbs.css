@@ -308,26 +308,6 @@ dialog{border:none}
 dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
 
 /* =========================================
-   PDF export — high-contrast black & white theme.
-   Applied to the html2canvas clone via onclone (screen media, so the
-   @media print block below does not apply during PDF capture).
-   ========================================= */
-body.pdf-export{background:#fff!important;color:#000!important}
-body.pdf-export #printHeader{display:block!important;color:#000!important}
-body.pdf-export #pmHeaderTitle{color:#000!important}
-body.pdf-export #printTitle{color:#000!important;border-bottom:2.5px solid #000}
-body.pdf-export .print-meta-table{border-collapse:collapse;color:#000}
-body.pdf-export .print-meta-table td{border:1.5px solid #000!important;color:#000!important;background:#fff!important;padding:4px 8px}
-body.pdf-export .print-meta-table .pml{font-weight:800!important;color:#000!important;background:#fff!important}
-body.pdf-export #bbsTable{border-collapse:collapse!important;color:#000!important;background:#fff!important}
-body.pdf-export #bbsTable th,
-body.pdf-export #bbsTable td{border:1.4px solid #000!important;color:#000!important;background:#fff!important}
-body.pdf-export #bbsTable thead th{background:#000!important;color:#fff!important;font-weight:800!important;border-color:#000!important}
-body.pdf-export #bbsTable tfoot td{font-weight:800!important;background:#e6e6e6!important;color:#000!important}
-body.pdf-export #bbsTable tbody tr td:last-child{display:none!important}
-body.pdf-export #bbsTable tbody tr td img{max-width:160px!important;max-height:104px!important;width:auto!important;height:auto!important;object-fit:contain!important;background:#fff!important;display:block!important;margin:0 auto!important}
-
-/* =========================================
    Print
    ========================================= */
 @media print {

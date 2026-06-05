@@ -557,84 +557,210 @@ $('#printBBS').addEventListener('click', async () => {
   btn.textContent = '⏳ Generating…';
 
   try {
-    const wrapper = document.getElementById('printWrapper');
-
-    // Temporarily make printHeader visible (it's hidden off-screen normally)
-    const header = document.getElementById('printHeader');
-    const prevHeaderDisplay = header.style.display;
-    header.style.display = 'block';
-
-    // Hide the actions column (last th + all last td in tbody)
-    const actionTh = document.querySelector('#bbsTable thead tr th:last-child');
-    const actionTds = document.querySelectorAll('#bbsTable tbody tr td:last-child');
-    if (actionTh) actionTh.style.display = 'none';
-    actionTds.forEach(td => td.style.display = 'none');
-
-    // Higher scale → crisper text + shape sketches in the exported PDF.
-    // onclone applies the high-contrast B&W theme to the rendered copy only
-    // (html2canvas uses screen media, so @media print rules don't apply).
-    const canvas = await html2canvas(wrapper, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      onclone: (doc) => { doc.body.classList.add('pdf-export'); },
-    });
-
-    header.style.display = prevHeaderDisplay;
-
-    // Restore actions column
-    if (actionTh) actionTh.style.display = '';
-    actionTds.forEach(td => td.style.display = '');
-
-    const imgData = canvas.toDataURL('image/png');
+    if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF not loaded');
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 10;
+    const pageW   = pdf.internal.pageSize.getWidth();
+    const pageH   = pdf.internal.pageSize.getHeight();
+    const margin  = 10;
     const usableW = pageW - margin * 2;
-    const usableH = pageH - margin * 2;
 
-    const imgW = canvas.width;
-    const imgH = canvas.height;
-    const ratio = Math.min(usableW / imgW, usableH / imgH);
+    // Standard PDF fonts use WinAnsi encoding — swap glyphs they can't encode
+    // (e.g. ⌀ U+2300) for a supported equivalent so they don't drop out.
+    const sani = s => String(s == null ? '' : s).replace(/⌀/g, 'Ø');
 
-    const drawW = imgW * ratio;
-    const drawH = imgH * ratio;
-    const offsetX = margin + (usableW - drawW) / 2;
-    const offsetY = margin;
+    const pad   = 1.6;     // cell padding (mm)
+    const lineH = 3.6;     // text line height (mm)
+    const fontSize     = 8;
+    const sketchMaxH   = 16;   // max sketch height per row (mm)
 
-    // Multi-page: slice canvas into page-height chunks
-    const pageHeightPx = usableH / ratio;
-    let srcY = 0;
-    let pageNum = 0;
+    // ── Column layout — proportional weights, normalised to fill usableW ──
+    const cols = [
+      { key:'idx',    title:'#',             w:8,  align:'right'  },
+      { key:'member', title:'Member',        w:33, align:'left'   },
+      { key:'mark',   title:'Mark',          w:15, align:'left'   },
+      { key:'dia',    title:'Dia',           w:11, align:'right'  },
+      { key:'shape',  title:'Shape',         w:33, align:'left'   },
+      { key:'sketch', title:'Sketch',        w:34, align:'center' },
+      { key:'cl',     title:'CL/Bar (mm)',   w:21, align:'right'  },
+      { key:'qty',    title:'Qty',           w:11, align:'right'  },
+      { key:'totL',   title:'Total L (m)',   w:22, align:'right'  },
+      { key:'wtm',    title:'Wt/m (kg)',     w:20, align:'right'  },
+      { key:'totW',   title:'Total Wt (kg)', w:23, align:'right'  },
+      { key:'rem',    title:'Remarks',       w:46, align:'left'   },
+    ];
+    const wsum = cols.reduce((a,c)=>a+c.w,0);
+    let xacc = margin;
+    cols.forEach(c => { c.w = c.w * usableW / wsum; c.x = xacc; xacc += c.w; });
+    const col = k => cols.find(c => c.key === k);
 
-    while (srcY < imgH) {
-      if (pageNum > 0) pdf.addPage();
-      const sliceH = Math.min(pageHeightPx, imgH - srcY);
-      const sliceCanvas = document.createElement('canvas');
-      sliceCanvas.width  = imgW;
-      sliceCanvas.height = sliceH;
-      const sliceCtx = sliceCanvas.getContext('2d');
-      sliceCtx.drawImage(canvas, 0, srcY, imgW, sliceH, 0, 0, imgW, sliceH);
-      const sliceData = sliceCanvas.toDataURL('image/png');
-      pdf.addImage(sliceData, 'PNG', offsetX, offsetY, drawW, sliceH * ratio);
-      srcY += pageHeightPx;
-      pageNum++;
+    pdf.setLineWidth(0.2);
+    pdf.setDrawColor(0);
+
+    // Place (possibly multi-line) text honouring a column's alignment
+    const putText = (c, val, yTop) => {
+      const arr = Array.isArray(val) ? val : [val];
+      const tx = c.align === 'right'  ? c.x + c.w - pad
+               : c.align === 'center' ? c.x + c.w / 2
+               :                         c.x + pad;
+      arr.forEach((ln, k) =>
+        pdf.text(ln, tx, yTop + pad + k * lineH, { align: c.align, baseline: 'top' }));
+    };
+
+    let y = margin;
+
+    // ── Project info header (first page only) ──
+    function drawProjectHeader() {
+      if (projectInfo.header) {
+        pdf.setFont('helvetica','bold'); pdf.setFontSize(11);
+        pdf.splitTextToSize(sani(projectInfo.header), usableW).forEach(ln => {
+          pdf.text(ln, pageW/2, y+4, { align:'center' }); y += 5.5;
+        });
+        y += 1;
+      }
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(13);
+      pdf.text('BAR BENDING SCHEDULE (BBS)', pageW/2, y+5, { align:'center' });
+      y += 9;
+
+      const meta = [
+        ['Name of Work',   projectInfo.project || '-'],
+        ['Name of Agency', projectInfo.agency  || '-'],
+        ['Reference',      projectInfo.ref     || '-'],
+        ['Date',           new Date().toLocaleDateString()],
+      ];
+      pdf.setFontSize(9);
+      const labelW = 40;
+      meta.forEach(([k,v]) => {
+        const vLines = pdf.splitTextToSize(sani(v), usableW - labelW - 2*pad);
+        const rh = Math.max(lineH, vLines.length * lineH) + 2*pad;
+        pdf.rect(margin, y, labelW, rh);
+        pdf.rect(margin + labelW, y, usableW - labelW, rh);
+        pdf.setFont('helvetica','bold');
+        pdf.text(sani(k), margin + pad, y + pad, { baseline:'top' });
+        pdf.setFont('helvetica','normal');
+        vLines.forEach((ln,i) =>
+          pdf.text(ln, margin + labelW + pad, y + pad + i*lineH, { baseline:'top' }));
+        y += rh;
+      });
+      y += 3;
     }
+
+    // ── Black table-header row (repeats on every page) ──
+    function drawTableHead() {
+      const hh = lineH * 2 + 2 * pad;
+      pdf.setFillColor(0,0,0);
+      pdf.setTextColor(255,255,255);
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
+      cols.forEach(c => {
+        pdf.rect(c.x, y, c.w, hh, 'F');
+        const tl = pdf.splitTextToSize(c.title, c.w - 2*pad);
+        const tx = c.align === 'right'  ? c.x + c.w - pad
+                 : c.align === 'center' ? c.x + c.w / 2
+                 :                         c.x + pad;
+        tl.forEach((ln,i) =>
+          pdf.text(ln, tx, y + pad + i*lineH, { align:c.align, baseline:'top' }));
+      });
+      pdf.setTextColor(0,0,0);
+      y += hh;
+    }
+
+    drawProjectHeader();
+    drawTableHead();
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
+
+    // ── Data rows ──
+    let sumLen = 0, sumWt = 0;
+    rows.forEach((r,i) => {
+      sumLen += r.totalLenM; sumWt += r.totalWtKg;
+
+      const t = {
+        idx:    String(i+1),
+        member: pdf.splitTextToSize(sani(r.member||''),     col('member').w - 2*pad),
+        mark:   pdf.splitTextToSize(sani(r.mark||''),       col('mark').w   - 2*pad),
+        dia:    String(r.dia),
+        shape:  pdf.splitTextToSize(sani(r.shapeLabel||''), col('shape').w  - 2*pad),
+        cl:     fmt0(r.clPerBarMm),
+        qty:    String(r.qty),
+        totL:   fmt3(r.totalLenM),
+        wtm:    fmt3(r.unitWtKgPerM),
+        totW:   fmt3(r.totalWtKg),
+        rem:    pdf.splitTextToSize(sani(r.remarks||''),    col('rem').w    - 2*pad),
+      };
+
+      // Sketch: fit inside the cell preserving aspect ratio
+      let sk = null;
+      if (r.shapeImg) {
+        try {
+          const p  = pdf.getImageProperties(r.shapeImg);
+          const ar = p.width / p.height;
+          const boxW = col('sketch').w - 2*pad;
+          let dw = boxW, dh = boxW / ar;
+          if (dh > sketchMaxH) { dh = sketchMaxH; dw = sketchMaxH * ar; }
+          sk = { w:dw, h:dh };
+        } catch { /* unreadable image → fall through to dash */ }
+      }
+
+      const maxLines = Math.max(t.member.length, t.shape.length, t.rem.length, 1);
+      const rowH = Math.max(maxLines * lineH, sk ? sk.h : 0) + 2 * pad;
+
+      if (y + rowH > pageH - margin) {
+        pdf.addPage(); y = margin;
+        drawTableHead();
+        pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
+      }
+
+      cols.forEach(c => pdf.rect(c.x, y, c.w, rowH));
+
+      putText(col('idx'),    t.idx,    y);
+      putText(col('member'), t.member, y);
+      putText(col('mark'),   t.mark,   y);
+      putText(col('dia'),    t.dia,    y);
+      putText(col('shape'),  t.shape,  y);
+      if (sk) {
+        const sx = col('sketch').x + (col('sketch').w - sk.w) / 2;
+        const sy = y + (rowH - sk.h) / 2;
+        try { pdf.addImage(r.shapeImg, 'PNG', sx, sy, sk.w, sk.h); } catch {}
+      } else {
+        putText(col('sketch'), '—', y);
+      }
+      putText(col('cl'),   t.cl,   y);
+      putText(col('qty'),  t.qty,  y);
+      putText(col('totL'), t.totL, y);
+      putText(col('wtm'),  t.wtm,  y);
+      putText(col('totW'), t.totW, y);
+      putText(col('rem'),  t.rem,  y);
+
+      y += rowH;
+    });
+
+    // ── Totals row ──
+    const totH = lineH + 2 * pad;
+    if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
+    pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
+    pdf.setFillColor(230,230,230);
+    const labelW = cols.slice(0,8).reduce((a,c)=>a+c.w,0);
+    pdf.rect(margin, y, labelW, totH, 'FD');
+    pdf.text('Totals:', margin + labelW - pad, y + pad, { align:'right', baseline:'top' });
+    pdf.rect(col('totL').x, y, col('totL').w, totH, 'FD');
+    pdf.text(fmt3(sumLen), col('totL').x + col('totL').w - pad, y + pad, { align:'right', baseline:'top' });
+    pdf.rect(col('wtm').x,  y, col('wtm').w,  totH, 'FD');
+    pdf.rect(col('totW').x, y, col('totW').w, totH, 'FD');
+    pdf.text(fmt3(sumWt), col('totW').x + col('totW').w - pad, y + pad, { align:'right', baseline:'top' });
+    pdf.rect(col('rem').x, y, col('rem').w, totH, 'FD');
+
+    // ── Page-number footers ──
+    const pageCount = pdf.internal.getNumberOfPages();
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(8); pdf.setTextColor(90,90,90);
+    for (let p = 1; p <= pageCount; p++) {
+      pdf.setPage(p);
+      pdf.text(`Page ${p} of ${pageCount}`, pageW - margin, pageH - 4, { align:'right' });
+    }
+    pdf.setTextColor(0,0,0);
 
     const proj = (projectInfo.project || 'BBS').replace(/[^a-zA-Z0-9_-]/g,'_');
     pdf.save(`${proj}_BBS.pdf`);
   } catch (err) {
-    // Restore in case of failure
-    const header = document.getElementById('printHeader');
-    if (header) header.style.display = 'none';
-    const actionTh = document.querySelector('#bbsTable thead tr th:last-child');
-    const actionTds = document.querySelectorAll('#bbsTable tbody tr td:last-child');
-    if (actionTh) actionTh.style.display = '';
-    actionTds.forEach(td => td.style.display = '');
     console.error('PDF export failed:', err);
     alert('PDF export failed. See console for details.');
   } finally {
