@@ -11,8 +11,6 @@
       "Each shape has:",
       "  id        - unique key (used by quick buttons + saved sketches)",
       "  label     - text shown on the quick-shape button",
-      "  shapeCode - Standard shape code (optional caption)",
-      "  formula   - cutting-length formula text (optional caption)",
       "  group     - 'quick' to show as a quick button, or any category name",
       "  segments  - array of polyline segments:",
       "      pts    : [[x,y], ...] normalised points",
@@ -33,7 +31,7 @@
   },
   "shapes": [
     {
-      "id": "straight", "label": "Straight (00)", "shapeCode": "00", "formula": "L = A", "group": "quick",
+      "id": "straight", "label": "Straight", "group": "quick",
       "segments": [
         { "pts": [[0,0.5],[1,0.5]], "style": "straight" }
       ],
@@ -42,50 +40,53 @@
       ]
     },
 	{
-      "id": "straight-w-sc-hook", "label": "Straight w/ semi-circular hook", "shapeCode": "01",
-      "formula": "A+14d",
+      "id": "straight-sc-hooks", "label": "Straight w/semi-circular hooks",
       "group": "quick",
       "segments": [ { "pts": [[0.125,0.468],[0.08,0.468],[0.08,0.532],[0.92,0.532],[0.92,0.475],[0.881,0.475]], "style": "bend" } ]
     },
-    {
-      "id": "straight-L-hooks", "label": "L hooks both ends", "shapeCode": "00 + 90° hooks", "formula": "L = A + 2B - 2d", "group": "quick",
+	{
+      "id": "straight-L-hooks", "label": "Straight w/L hooks",
+      "group": "quick",
+      "segments": [ { "pts": [[0.08,0.44],[0.08,0.571],[0.92,0.571],[0.92,0.429]], "style": "bend" } ]
+    },
+	{
+      "id": "stirrup-2-Legged", "label": "Rectangular Stirrup 2-Legged",
+      "group": "quick",
       "segments": [
-        { "pts": [[0.08,0.78],[0.08,0.42],[0.92,0.42],[0.92,0.78]], "style": "bend" }
-      ],
-      "dims": [
-        { "from": [0.08,0.42], "to": [0.92,0.42], "label": "A", "off": [0,-16] },
-        { "from": [0.08,0.42], "to": [0.08,0.78], "label": "B", "off": [-16,0] },
-        { "from": [0.92,0.42], "to": [0.92,0.78], "label": "B", "off": [16,0] }
+      { "pts": [[0.08,0.115],[0.92,0.115],[0.92,0.885],[0.08,0.885]], "style": "bend", "closed": true },
+      { "pts": [[0.142,0.252],[0.08,0.181]], "style": "straight" },
+      { "pts": [[0.08,0.181],[0.08,0.131],[0.115,0.119],[0.154,0.152],[0.2,0.223]], "style": "curve" }
       ]
     },
     {
-      "id": "stirrup-rect", "label": "Rectangular stirrup", "shapeCode": "51", "formula": "L = 2(A + B) + 2(hook) - bends", "group": "quick",
+      "id": "stirrup-4-Legged", "label": "Rectangular Stirrup 4-Legged",
+      "group": "quick",
       "segments": [
-        { "pts": [[0.12,0.16],[0.88,0.16],[0.88,0.86],[0.12,0.86]], "style": "bend", "closed": true },
-        { "pts": [[0.86,0.16],[0.68,0.4]], "style": "straight" },
-        { "pts": [[0.78,0.16],[0.6,0.4]],  "style": "straight" }
-      ],
-      "dims": [
-        { "from": [0.12,0.12], "to": [0.88,0.12], "label": "A", "off": [0,-16] },
-        { "from": [0.12,0.12], "to": [0.12,0.88], "label": "B", "off": [-16,0] }
+      { "pts": [[0.08,0.143],[0.648,0.143],[0.648,0.859],[0.08,0.859]], "style": "bend", "closed": true },
+      { "pts": [[0.359,0.136],[0.92,0.136],[0.92,0.864],[0.359,0.864]], "style": "bend", "closed": true },
+      { "pts": [[0.15,0.273],[0.082,0.218]], "style": "straight" },
+      { "pts": [[0.082,0.218],[0.083,0.151],[0.133,0.143],[0.201,0.198]], "style": "curve" },
+      { "pts": [[0.799,0.213],[0.832,0.156]], "style": "straight" },
+      { "pts": [[0.832,0.156],[0.878,0.14],[0.912,0.158],[0.912,0.183],[0.87,0.239]], "style": "curve" }
+      ]
+    },
+	{
+      "id": "circ-tie", "label": "Circular tie",
+      "group": "quick",
+      "segments": [
+      { "pts": [[0.912,0.5],[0.898,0.609],[0.857,0.71],[0.791,0.797],[0.706,0.864],[0.607,0.906],[0.5,0.92],[0.393,0.906],[0.294,0.864],[0.209,0.797],[0.143,0.71],[0.102,0.609],[0.088,0.5],[0.102,0.391],[0.143,0.29],[0.209,0.203],[0.294,0.136],[0.393,0.094],[0.5,0.08],[0.607,0.094],[0.706,0.136],[0.791,0.203],[0.857,0.29],[0.898,0.391]], "style": "curve", "closed": true },
+      { "pts": [[0.145,0.49],[0.108,0.419],[0.13,0.318],[0.215,0.274]], "style": "straight" }
       ]
     },
     {
-      "id": "circle", "label": "Circular tie", "shapeCode": "75", "formula": "L = π(D − d) + 2(hook)", "group": "quick",
-      "generator": "circle",
-      "dims": [
-        { "from": [0.5,0.5], "to": [1,0.5], "label": "⌀" }
-      ]
-    },
-    {
-      "id": "spiral", "label": "Spiral tie (3D)", "shapeCode": "77", "formula": "L = n·√((πD)² + p²)", "group": "quick",
+      "id": "spiral", "label": "Spiral tie (3D)", "group": "quick",
       "generator": "spiral", "turns": 4,
       "dims": [
         { "from": [0,0.5], "to": [1,0.5], "label": "⌀" }
       ]
     },
     {
-      "id": "chair", "label": "Chair bar", "shapeCode": "98", "formula": "L = A + 2B + 2C", "group": "quick",
+      "id": "chair", "label": "Chair bar", "group": "quick",
       "iso": true, "fit": 200,
       "segments": [
         { "pts": [[0,90,0],[200,90,0]], "style": "straight" },
