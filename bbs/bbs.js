@@ -649,11 +649,14 @@ $('#printBBS').addEventListener('click', async () => {
     // ── Black table-header row (repeats on every page) ──
     function drawTableHead() {
       const hh = lineH * 2 + 2 * pad;
-      pdf.setFillColor(0,0,0);
-      pdf.setTextColor(255,255,255);
       pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
       cols.forEach(c => {
+        // Re-assert colours per cell: jsPDF's text() leaves the active fill
+        // colour set to the text colour, so a single setFillColor up front
+        // would only apply to the first rect drawn before any text.
+        pdf.setFillColor(0,0,0);
         pdf.rect(c.x, y, c.w, hh, 'F');
+        pdf.setTextColor(255,255,255);
         const tl = pdf.splitTextToSize(c.title, c.w - 2*pad);
         const tx = c.align === 'right'  ? c.x + c.w - pad
                  : c.align === 'center' ? c.x + c.w / 2
@@ -738,16 +741,20 @@ $('#printBBS').addEventListener('click', async () => {
     const totH = lineH + 2 * pad;
     if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
-    pdf.setFillColor(230,230,230);
+    pdf.setTextColor(0,0,0);
     const labelW = cols.slice(0,8).reduce((a,c)=>a+c.w,0);
-    pdf.rect(margin, y, labelW, totH, 'FD');
+    // Re-assert the grey fill before every cell: text() in between resets the
+    // active fill colour to the text colour (black), which would otherwise
+    // paint the following cells solid black.
+    const totCell = (x, w) => { pdf.setFillColor(230,230,230); pdf.rect(x, y, w, totH, 'FD'); };
+    totCell(margin, labelW);
     pdf.text('Totals:', margin + labelW - pad, y + pad, { align:'right', baseline:'top' });
-    pdf.rect(col('totL').x, y, col('totL').w, totH, 'FD');
+    totCell(col('totL').x, col('totL').w);
     pdf.text(fmt3(sumLen), col('totL').x + col('totL').w - pad, y + pad, { align:'right', baseline:'top' });
-    pdf.rect(col('wtm').x,  y, col('wtm').w,  totH, 'FD');
-    pdf.rect(col('totW').x, y, col('totW').w, totH, 'FD');
+    totCell(col('wtm').x,  col('wtm').w);
+    totCell(col('totW').x, col('totW').w);
     pdf.text(fmt3(sumWt), col('totW').x + col('totW').w - pad, y + pad, { align:'right', baseline:'top' });
-    pdf.rect(col('rem').x, y, col('rem').w, totH, 'FD');
+    totCell(col('rem').x, col('rem').w);
 
     // ── Page-number footers ──
     const pageCount = pdf.internal.getNumberOfPages();
