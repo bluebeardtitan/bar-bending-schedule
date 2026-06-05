@@ -903,7 +903,7 @@ const drawerHTML = `
         <button class="btn small ghost drawer-tool" data-tool="rect"        title="Click-drag to draw rectangle">▭ Rectangle</button>
         <button class="btn small ghost drawer-tool" data-tool="circle"      title="Click-drag to draw ellipse">◯ Circle / Stirrup</button>
         <button class="btn small ghost drawer-tool" data-tool="text"        title="Click canvas to place label">T Annotation</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-aligned" title="Aligned dimension: click two points, then click to set offset · measures true distance">↔ Dim: Aligned</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-aligned" title="Aligned dimension: click two points, then click to set offset · measures true distance · press O to snap 2nd point H/V (ortho)">↔ Dim: Aligned</button>
         <button class="btn small ghost drawer-tool" data-tool="dim-angular" title="Angular dimension: click vertex, then two arm points · measures angle between them">∠ Dim: Angular</button>
         <button class="btn small ghost drawer-tool" data-tool="dim-leader"  title="Leader: click origin, then elbow, then text anchor · places an annotation leader line">↗ Dim: Leader</button>
         <button class="btn small ghost drawer-tool" data-tool="edit-points" title="Drag existing anchor points to reposition them · Click elsewhere to deselect">✦ Edit Points</button>
@@ -1013,6 +1013,7 @@ let dragStart   = null;
 /* ── Dimension tool state (shared across all three dim types) ── */
 let dimPhase    = 0;      // which click we're waiting for (0 = idle)
 let dimPts      = [];     // accumulated clicks for current dim in progress
+let dimOrtho    = false;  // aligned dim: snap 2nd point H/V to the 1st (toggle with O)
 
 /* ── Edit-points mode state ── */
 let editDragCmd   = null;   // reference to the history cmd being edited
@@ -1446,7 +1447,9 @@ function renderGhostFrame(cursorPt) {
   } else if (activeTool === 'dim-aligned' && dimPhase >= 1 && cursorPt) {
     // Phase 1: show ghost line from p1 to cursor; Phase 2: show full aligned dim
     const p1 = dimPts[0];
-    const p2 = dimPhase === 1 ? cursorPt : dimPts[1];
+    const p2 = dimPhase === 1
+      ? (dimOrtho ? orthoSnap(cursorPt, p1) : cursorPt)
+      : dimPts[1];
     const offset = dimPhase === 2
       ? _alignedOffset(p1, p2, cursorPt)
       : -30;
@@ -1457,7 +1460,8 @@ function renderGhostFrame(cursorPt) {
     }));
     // Anchor dots
     dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
-    layer.add(new Konva.Circle({x:cursorPt.x,y:cursorPt.y,radius:4,fill:'rgba(251,191,36,0.85)',stroke:'#fff',strokeWidth:1.5}));
+    const dot = (dimPhase === 1 && dimOrtho) ? orthoSnap(cursorPt, p1) : cursorPt;
+    layer.add(new Konva.Circle({x:dot.x,y:dot.y,radius:4,fill:'rgba(251,191,36,0.85)',stroke:'#fff',strokeWidth:1.5}));
 
   } else if (activeTool === 'dim-angular' && dimPhase >= 1 && cursorPt) {
     const vertex = dimPts[0];
@@ -1635,11 +1639,12 @@ function onDown(e) {
 
   /* ── Aligned dimension: click 1=p1, click 2=p2, click 3=offset side ── */
   if (activeTool==='dim-aligned') {
-    dimPts.push(pt);
+    // 2nd click snaps H/V to the 1st point while ortho mode (O) is on
+    dimPts.push(dimOrtho && dimPts.length===1 ? orthoSnap(pt, dimPts[0]) : pt);
     if (dimPts.length === 3) {
       const [p1,p2,offPt] = dimPts;
       history.push({type:'dim-aligned', p1, p2, offset: _alignedOffset(p1,p2,offPt), label:getAnnot(), size:getFontSize()});
-      dimPhase=0; dimPts=[]; redraw();
+      dimPhase=0; dimPts=[]; dimOrtho=false; redraw();
     } else {
       dimPhase = dimPts.length;
     }
@@ -1743,9 +1748,15 @@ function onUp(e) {
 function onKeyDown(e) {
   if(e.key==='Escape'){
     if(isDrawing)cancelPath();
-    if(dimPhase>0){dimPhase=0;dimPts=[];redraw();}
+    if(dimPhase>0){dimPhase=0;dimPts=[];dimOrtho=false;redraw();}
     dragStart=null;
     if(activeTool==='edit-points'){editDragCmd=null;editDragIdx=null;editDragging=false;renderEditHandles();}
+  }
+  if((e.key==='o'||e.key==='O')&&activeTool==='dim-aligned'){
+    dimOrtho=!dimOrtho;
+    const hintEl=document.getElementById('canvasHint');
+    if(hintEl)hintEl.textContent=(dimOrtho?'Ortho ON (O): 2nd point snaps H/V · ':'')+'Click 1=start · Click 2=end · Click 3=offset side · Esc=cancel';
+    if(dimPhase>=1)renderGhostFrame(mousePos);
   }
   if(e.key==='Enter'&&(activeTool==='rebar-path'||activeTool==='ortho-bar')&&isDrawing) commitRebarPath();
   if((e.key==='b'||e.key==='B')&&activeTool==='rebar-path'&&isDrawing){
@@ -1761,7 +1772,7 @@ function onKeyDown(e) {
 
 function setTool(t) {
   if(isDrawing)cancelPath();
-  dimPhase=0; dimPts=[]; dragStart=null;
+  dimPhase=0; dimPts=[]; dimOrtho=false; dragStart=null;
   /* reset edit state when switching away */
   if(t !== 'edit-points') { editDragCmd=null; editDragIdx=null; editDragging=false; }
   activeTool=t;
@@ -1778,7 +1789,7 @@ function setTool(t) {
   const hints={
     'ortho-bar':   'Ortho mode: clicks snap H/V · Dbl-click=finish · Esc=cancel',
     'edit-points': 'Drag blue handles to move points · Esc to deselect · switch tool when done',
-    'dim-aligned': 'Click 1=start · Click 2=end · Click 3=offset side · Esc=cancel',
+    'dim-aligned': 'Click 1=start · Click 2=end · Click 3=offset side · O=ortho H/V · Esc=cancel',
     'dim-angular': 'Click 1=vertex · Click 2=arm A · Click 3=arm B · Esc=cancel',
     'dim-leader':  'Click 1=arrowhead · Click 2=elbow · Click 3=text anchor · Esc=cancel',
   };
