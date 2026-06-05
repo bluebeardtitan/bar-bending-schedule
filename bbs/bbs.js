@@ -360,6 +360,7 @@ $('#barForm').addEventListener('submit', e=>{
     clPerBarMm:cl,qty,unitWtKgPerM:wtPerM,totalLenM,totalWtKg,
     remarks,grade,createdAt:Date.now(),
     shapeImg: currentShapeImg||null,
+    shapeVec: currentShapeVec||null,
     inputs:{}
   };
 
@@ -410,7 +411,7 @@ $('#bbsTable').addEventListener('click', e=>{
     $('#qty').value    = r.qty;
 
     // Restore shape image
-    if(r.shapeImg){ currentShapeImg=r.shapeImg; $('#shapePreview').src=r.shapeImg; $('#shapePreview').style.display='block'; $('#shapeClearBtn').style.display='inline-flex'; }
+    if(r.shapeImg){ currentShapeImg=r.shapeImg; currentShapeVec=r.shapeVec||null; $('#shapePreview').src=r.shapeImg; $('#shapePreview').style.display='block'; $('#shapeClearBtn').style.display='inline-flex'; }
     else { clearShapeUpload(); }
 
     if(r.shape==='straight'){ $('#straightLen').value=inp.len||''; }
@@ -570,6 +571,53 @@ $('#printBBS').addEventListener('click', async () => {
     // (e.g. ⌀ U+2300) for a supported equivalent so they don't drop out.
     const sani = s => String(s == null ? '' : s).replace(/⌀/g, 'Ø');
 
+    // Parse a CSS colour (#rgb / #rrggbb / rgb()) to an [r,g,b] triple
+    const toRGB = c => {
+      c = String(c || '#000');
+      if (c[0] === '#') {
+        let h = c.slice(1);
+        if (h.length === 3) h = h.split('').map(x => x + x).join('');
+        const n = parseInt(h, 16);
+        return [(n>>16)&255, (n>>8)&255, n&255];
+      }
+      const m = /rgba?\(([^)]+)\)/.exec(c);
+      if (m) { const a = m[1].split(',').map(parseFloat); return [a[0]|0, a[1]|0, a[2]|0]; }
+      return [0,0,0];
+    };
+
+    // Render a normalised vector sketch model as true PDF vector graphics
+    const drawVectorSketch = (vec, x0, y0, boxW, boxH) => {
+      const vw = vec.bw || 1, vh = vec.bh || 1;
+      const s  = Math.min(boxW / vw, boxH / vh);
+      const ox = x0 + (boxW - vw*s) / 2, oy = y0 + (boxH - vh*s) / 2;
+      const X = x => ox + x*s, Y = y => oy + y*s;
+      const deltas = path => { const d=[]; for (let i=1;i<path.length;i++) d.push([(path[i][0]-path[i-1][0])*s,(path[i][1]-path[i-1][1])*s]); return d; };
+      (vec.ops || []).forEach(op => {
+        if (op.k === 'stroke') {
+          const [r,g,b] = toRGB(op.color);
+          pdf.setDrawColor(r,g,b);
+          pdf.setLineWidth(Math.max(0.15, op.w * s));
+          pdf.setLineDashPattern((op.dash && op.dash.length) ? op.dash.map(d=>d*s) : [], 0);
+          op.paths.forEach(p => { if (p.length >= 2) pdf.lines(deltas(p), X(p[0][0]), Y(p[0][1]), [1,1], 'S', false); });
+        } else if (op.k === 'fill') {
+          const [r,g,b] = toRGB(op.color);
+          pdf.setFillColor(r,g,b);
+          op.paths.forEach(p => { if (p.length >= 2) pdf.lines(deltas(p), X(p[0][0]), Y(p[0][1]), [1,1], 'F', true); });
+        } else if (op.k === 'text') {
+          const pt = (op.s * s) / 0.3528;     // mm → pt
+          if (pt < 2) return;
+          const [r,g,b] = toRGB(op.color);
+          pdf.setTextColor(r,g,b);
+          pdf.setFont('helvetica','bold'); pdf.setFontSize(pt);
+          const o = { baseline: op.baseline==='middle'?'middle':op.baseline==='top'?'top':'alphabetic',
+                      align:    op.align==='center'?'center':op.align==='right'?'right':'left' };
+          if (op.rot) o.angle = -op.rot * 180 / Math.PI;
+          pdf.text(sani(op.t), X(op.x), Y(op.y), o);
+        }
+      });
+      pdf.setTextColor(0,0,0); pdf.setDrawColor(0); pdf.setLineWidth(0.2); pdf.setLineDashPattern([],0);
+    };
+
     const pad   = 1.6;     // cell padding (mm)
     const lineH = 3.6;     // text line height (mm)
     const fontSize     = 8;
@@ -688,16 +736,18 @@ $('#printBBS').addEventListener('click', async () => {
         rem:    pdf.splitTextToSize(sani(r.remarks||''),    col('rem').w    - 2*pad),
       };
 
-      // Sketch: fit inside the cell preserving aspect ratio
-      let sk = null;
-      if (r.shapeImg) {
+      // Sketch: fit inside the cell preserving aspect ratio.
+      // Prefer the vector model (crisp + tiny); fall back to the stored PNG.
+      let sk = null, skVec = null;
+      const boxW = col('sketch').w - 2*pad;
+      const fit = ar => { let dw=boxW, dh=boxW/ar; if (dh>sketchMaxH){ dh=sketchMaxH; dw=sketchMaxH*ar; } return { w:dw, h:dh }; };
+      if (r.shapeVec && r.shapeVec.ops && r.shapeVec.ops.length) {
+        skVec = r.shapeVec;
+        sk = fit((r.shapeVec.bw || 1) / (r.shapeVec.bh || 1));
+      } else if (r.shapeImg) {
         try {
-          const p  = pdf.getImageProperties(r.shapeImg);
-          const ar = p.width / p.height;
-          const boxW = col('sketch').w - 2*pad;
-          let dw = boxW, dh = boxW / ar;
-          if (dh > sketchMaxH) { dh = sketchMaxH; dw = sketchMaxH * ar; }
-          sk = { w:dw, h:dh };
+          const p = pdf.getImageProperties(r.shapeImg);
+          sk = fit(p.width / p.height);
         } catch { /* unreadable image → fall through to dash */ }
       }
 
@@ -720,7 +770,8 @@ $('#printBBS').addEventListener('click', async () => {
       if (sk) {
         const sx = col('sketch').x + (col('sketch').w - sk.w) / 2;
         const sy = y + (rowH - sk.h) / 2;
-        try { pdf.addImage(r.shapeImg, 'PNG', sx, sy, sk.w, sk.h); } catch {}
+        if (skVec) drawVectorSketch(skVec, sx, sy, sk.w, sk.h);
+        else { try { pdf.addImage(r.shapeImg, 'PNG', sx, sy, sk.w, sk.h); } catch {} }
       } else {
         putText(col('sketch'), '—', y);
       }
@@ -809,8 +860,10 @@ $('#tbody').addEventListener('dragend',()=>{
    Shape Image Upload
    ========================= */
 let currentShapeImg=null;
+let currentShapeVec=null;   // vector model of a drawn sketch (null for uploads)
 function clearShapeUpload(){
   currentShapeImg=null;
+  currentShapeVec=null;
   $('#shapeFile').value='';
   $('#shapePreview').style.display='none';
   $('#shapePreview').src='';
@@ -826,6 +879,7 @@ $('#shapeFile').addEventListener('change',()=>{
   const reader=new FileReader();
   reader.onload=ev=>{
     currentShapeImg=ev.target.result;
+    currentShapeVec=null;   // an uploaded raster/SVG has no vector model
     $('#shapePreview').src=currentShapeImg;
     $('#shapePreview').style.display='block';
   $('#shapeClearBtn').style.display='inline-flex';
@@ -880,9 +934,10 @@ updateCustomPreview();
    Shape Drawer Integration
    ========================= */
 document.getElementById('shapeDrawBtn').addEventListener('click', () => {
-  window.ShapeDrawer.open(dataUrl => {
+  window.ShapeDrawer.open((dataUrl, vector) => {
     if (!dataUrl) return;
     currentShapeImg = dataUrl;
+    currentShapeVec = vector || null;
     const preview = document.getElementById('shapePreview');
     preview.src = dataUrl;
     preview.style.display = 'block';
