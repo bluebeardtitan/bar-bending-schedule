@@ -1994,35 +1994,73 @@ function populateQuickShapes(){
 }
 
 /* ── Export canvas as PNG (for "Use Shape") — grid excluded ──
-   Crops tightly to the drawn geometry and renders at high pixelRatio so the
-   stored sketch is sharp and fills its frame (instead of a tiny shape inside a
-   big mostly-white canvas, which is what made the PDF sketch look low-quality). */
-// Render the cropped sketch so its longest side is ~this many px — a small
-// shape gets a high pixelRatio, a large one a smaller ratio, giving a
-// consistently crisp source without bloating storage for big drawings.
-const EXPORT_TARGET_PX = 1100;
+   Crops tightly to the drawn geometry using history-based bounds
+   (Konva.getClientRect is unreliable for sceneFunc shapes without
+   explicit width/height — they all report {0,0,0,0}).
+   Target longest side ~600px; pixelRatio 2–4 keeps files small. */
+const EXPORT_TARGET_PX = 600;
+
+function computeHistoryBounds() {
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  const grow=(x,y)=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;};
+  const pad=(x,y,r)=>{grow(x-r,y-r);grow(x+r,y+r);};
+  for (const cmd of history) {
+    if (cmd.type==='shape') return null; // drawShapeDiagram fills full canvas
+    const d = cmd.diam||16;
+    const r = d * 0.65; // half stroke + rib overhang
+    if (cmd.type==='rebar-path'||cmd.type==='ortho-bar') {
+      cmd.points.forEach(p=>pad(p.x,p.y,r));
+    } else if (cmd.type==='rect') {
+      const lx=Math.min(cmd.x,cmd.x+cmd.w), rx=Math.max(cmd.x,cmd.x+cmd.w);
+      const ty=Math.min(cmd.y,cmd.y+cmd.h), by=Math.max(cmd.y,cmd.y+cmd.h);
+      pad(lx,ty,r); pad(rx,by,r);
+    } else if (cmd.type==='circle') {
+      grow(cmd.cx-cmd.rx-r,cmd.cy-cmd.ry-r); grow(cmd.cx+cmd.rx+r,cmd.cy+cmd.ry+r);
+    } else if (cmd.type==='text') {
+      const fs=cmd.size||13;
+      grow(cmd.x-4,cmd.y-4); grow(cmd.x+(cmd.text||'').length*fs*0.65+8,cmd.y+fs*1.6+4);
+    } else if (cmd.type==='dim-aligned') {
+      const off=Math.abs(cmd.offset||28);
+      const dx=cmd.p2.x-cmd.p1.x, dy=cmd.p2.y-cmd.p1.y;
+      const len=Math.hypot(dx,dy)||1, nx=-dy/len, ny=dx/len;
+      const sign=cmd.offset<0?-1:1;
+      [cmd.p1,cmd.p2].forEach(p=>{ pad(p.x,p.y,8); pad(p.x+nx*sign*off,p.y+ny*sign*off,8); });
+      const mx=(cmd.p1.x+cmd.p2.x)/2+nx*sign*off, my=(cmd.p1.y+cmd.p2.y)/2+ny*sign*off;
+      pad(mx,my,50);
+    } else if (cmd.type==='dim-angular') {
+      [cmd.vertex,cmd.ptA,cmd.ptB].filter(Boolean).forEach(p=>pad(p.x,p.y,70));
+    } else if (cmd.type==='dim-leader') {
+      [cmd.origin,cmd.elbow,cmd.textPt].filter(Boolean).forEach(p=>pad(p.x,p.y,70));
+    }
+  }
+  if (!isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
 function exportToPNG() {
   if (!_konvaStage) return '';
   const layer = getKonvaLayer();
   if (!layer) return '';
 
-  // Hide grid so it isn't captured, and so getClientRect sees only the shape
   if (_gridLayer) _gridLayer.hide();
 
-  // Tight content bounds (stage coords); pad a little so strokes aren't clipped
+  // Tight crop from history bounds — avoids full-canvas export caused by
+  // background Rect inflating layer.getClientRect() to stage size
   let crop = null;
-  const rect = layer.getClientRect({ skipShadow:false });
-  if (rect && rect.width > 1 && rect.height > 1) {
-    const pad = Math.max(12, Math.round(Math.max(rect.width, rect.height) * 0.06));
-    const x = Math.max(0, Math.floor(rect.x - pad));
-    const y = Math.max(0, Math.floor(rect.y - pad));
-    const w = Math.min(_stageW - x, Math.ceil(rect.width  + pad * 2));
-    const h = Math.min(_stageH - y, Math.ceil(rect.height + pad * 2));
-    if (w > 1 && h > 1) crop = { x, y, width: w, height: h };
+  const bounds = computeHistoryBounds();
+  if (bounds) {
+    const { minX, minY, maxX, maxY } = bounds;
+    const bw = maxX-minX, bh = maxY-minY;
+    const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
+    const x = Math.max(0, Math.floor(minX-p));
+    const y = Math.max(0, Math.floor(minY-p));
+    const w = Math.min(_stageW-x, Math.ceil(bw+p*2));
+    const h = Math.min(_stageH-y, Math.ceil(bh+p*2));
+    if (w > 4 && h > 4) crop = { x, y, width:w, height:h };
   }
 
   const maxSide = crop ? Math.max(crop.width, crop.height) : Math.max(_stageW, _stageH);
-  const pixelRatio = Math.min(8, Math.max(3, +(EXPORT_TARGET_PX / maxSide).toFixed(2)));
+  const pixelRatio = Math.min(4, Math.max(2, +(EXPORT_TARGET_PX / maxSide).toFixed(2)));
 
   // White background behind the (possibly transparent) shape
   const bg = new Konva.Rect({ x:0, y:0, width:_stageW, height:_stageH, fill:'#fff' });

@@ -574,7 +574,7 @@ $('#printBBS').addEventListener('click', async () => {
     // onclone applies the high-contrast B&W theme to the rendered copy only
     // (html2canvas uses screen media, so @media print rules don't apply).
     const canvas = await html2canvas(wrapper, {
-      scale: 4,
+      scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,

@@ -325,7 +325,7 @@ body.pdf-export #bbsTable td{border:1.4px solid #000!important;color:#000!import
 body.pdf-export #bbsTable thead th{background:#000!important;color:#fff!important;font-weight:800!important;border-color:#000!important}
 body.pdf-export #bbsTable tfoot td{font-weight:800!important;background:#e6e6e6!important;color:#000!important}
 body.pdf-export #bbsTable tbody tr td:last-child{display:none!important}
-body.pdf-export #bbsTable tbody tr td img{max-width:160px!important;max-height:104px!important;object-fit:contain!important;background:#fff!important}
+body.pdf-export #bbsTable tbody tr td img{max-width:160px!important;max-height:104px!important;width:auto!important;height:auto!important;object-fit:contain!important;background:#fff!important;display:block!important;margin:0 auto!important}
 
 /* =========================================
    Print
