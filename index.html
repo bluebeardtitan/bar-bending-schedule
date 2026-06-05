@@ -145,7 +145,7 @@
           </select>
         </div>
         <div class="fgroup fg-2" data-tip="Attach or draw a shape sketch">
-          <label>Shape Sketch <span class="subtle">(optional)</span></label>
+          <span class="flabel">Shape Sketch <span class="subtle">(optional)</span></span>
           <div class="sketch-row">
             <input type="file" id="shapeFile" accept="image/jpeg,image/png,image/svg+xml" style="display:none" tabindex="-1">
             <button type="button" id="shapeUploadBtn" class="btn small ghost" tabindex="6">📎 Upload</button>
@@ -155,7 +155,7 @@
           </div>
         </div>
         <div class="fgroup fg-3 chips-group">
-          <label>&nbsp;</label>
+          <span class="flabel" aria-hidden="true">&nbsp;</span>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-top:2px">
             <span class="chip">Wt: <span id="unitWtPreview" class="mono">d²/162</span></span>
             <span class="chip">Bend: <span id="bendRulePreview" class="mono">IS</span></span>
@@ -273,7 +273,7 @@
         <div class="shape shape-custom hidden">
           <div class="frow">
             <div class="fgroup fg-7">
-              <label>Custom Legs (mm) &amp; Bends (°)</label>
+              <span class="flabel">Custom Legs (mm) &amp; Bends (°)</span>
               <div class="subtle">Add legs and bends sequentially. Deductions and hooks are auto-applied.</div>
             </div>
           </div>

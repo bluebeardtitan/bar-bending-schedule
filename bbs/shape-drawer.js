@@ -1981,13 +1981,71 @@ function manualLoadShapesJson(){
   inp.click();
 }
 
+/* Expand a library shape definition into editable history commands (the same
+   command types the drawing tools produce). This lets quick shapes be edited,
+   dimensioned and annotated, and makes them export with correct proportions
+   (computeHistoryBounds can crop them tightly).
+   Returns null for generator/iso defs, which stay as a baked `shape` command. */
+function shapeDefToCommands(def, diam, style){
+  if(!def || def.generator || def.iso || !def.segments || !def.segments.length) return null;
+
+  // Fit the shape's actual bounding box to the canvas (preserving aspect ratio)
+  // rather than stretching the whole 0..1 box across min(w,h). Saved coords only
+  // occupy ~84% of that box (export margin) and the canvas is wide, so the old
+  // mapping made loaded shapes look small/compressed vs. freshly drawn ones.
+  let nMinX=Infinity,nMinY=Infinity,nMaxX=-Infinity,nMaxY=-Infinity;
+  const consider=(x,y)=>{if(x<nMinX)nMinX=x;if(x>nMaxX)nMaxX=x;if(y<nMinY)nMinY=y;if(y>nMaxY)nMaxY=y;};
+  def.segments.forEach(s=>(s.pts||[]).forEach(p=>consider(p[0],p[1])));
+  (def.dims||[]).forEach(dm=>[dm.from,dm.to,dm.vertex,dm.a,dm.b,dm.origin,dm.elbow,dm.text]
+    .forEach(p=>{ if(p) consider(p[0],p[1]); }));
+  if(!isFinite(nMinX)) return null;
+
+  const pad=44, cx=_stageW/2, cy=_stageH/2;
+  const availW=_stageW-pad*2, availH=_stageH-pad*2;
+  const nbw=(nMaxX-nMinX)||1e-6, nbh=(nMaxY-nMinY)||1e-6;
+  const FILL=0.85;   // leave room for dimension lines/labels that sit outside the bbox
+  const scale=Math.min(availW/nbw, availH/nbh)*FILL;
+  const scx=(nMinX+nMaxX)/2, scy=(nMinY+nMaxY)/2;
+  const mapPt=p=>({ x:cx+(p[0]-scx)*scale, y:cy+(p[1]-scy)*scale });
+
+  const cmds=[];
+  def.segments.forEach(seg=>{
+    if(!seg.pts || seg.pts.length<2) return;
+    cmds.push({ type:'rebar-path', points:seg.pts.map(mapPt), bezier:seg.style==='curve', closed:!!seg.closed, diam, style });
+  });
+  if(!cmds.length) return null;
+  (def.dims||[]).forEach(dm=>{
+    const sizePx = dm.size!=null ? dm.size*scale : undefined;
+    if(dm.type==='angular'){
+      cmds.push({ type:'dim-angular', vertex:mapPt(dm.vertex), ptA:mapPt(dm.a), ptB:mapPt(dm.b), label:dm.label||'', size:sizePx });
+    } else if(dm.type==='leader'){
+      cmds.push({ type:'dim-leader', origin:mapPt(dm.origin), elbow:mapPt(dm.elbow), textPt:dm.text?mapPt(dm.text):null, label:dm.label||'', size:sizePx });
+    } else {
+      const a=mapPt(dm.from), b=mapPt(dm.to);
+      let offset;
+      if(dm.perp!=null){
+        offset=dm.perp*scale;
+      } else {
+        // Legacy [dx,dy] label nudge → signed perpendicular offset (matches _alignedOffset's normal)
+        const off=dm.off||[0,0], dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
+        offset=off[0]*(-dy/len)+off[1]*(dx/len);
+      }
+      cmds.push({ type:'dim-aligned', p1:a, p2:b, offset, label:dm.label||'', size:sizePx });
+    }
+  });
+  return cmds;
+}
+
 function populateQuickShapes(){
   const host=document.getElementById('quickShapeList'); if(!host)return;
   const quick=window.SHAPE_LIB_LIST.filter(s=>(s.group||'quick')==='quick');
   if(!quick.length){host.innerHTML='<span style="font-size:10px;color:var(--muted)">No shapes</span>';return;}
   host.innerHTML=quick.map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.shapeCode?'Standard shape '+s.shapeCode:''}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label||s.id}</button>`).join('');
   host.querySelectorAll('.shape-prev-btn').forEach(b=>b.addEventListener('click',()=>{
-    history=[{type:'shape',shape:b.dataset.shape,diam:getBarSize(),style:activeStyle}]; redraw();
+    const def=(window.SHAPE_LIB||{})[b.dataset.shape];
+    const cmds=shapeDefToCommands(def, getBarSize(), activeStyle);
+    history = cmds || [{type:'shape',shape:b.dataset.shape,diam:getBarSize(),style:activeStyle}];
+    redraw();
   }));
   const loadBtn=document.getElementById('loadShapesBtn');
   if(loadBtn)loadBtn.onclick=manualLoadShapesJson;
@@ -2005,7 +2063,14 @@ function computeHistoryBounds() {
   const grow=(x,y)=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;};
   const pad=(x,y,r)=>{grow(x-r,y-r);grow(x+r,y+r);};
   for (const cmd of history) {
-    if (cmd.type==='shape') return null; // drawShapeDiagram fills full canvas
+    if (cmd.type==='shape') {
+      // Baked diagram (generator/iso fallback): drawShapeDiagram centres it in
+      // a min(sw,sh) square. Crop to that square so the export keeps the shape's
+      // proportions instead of inheriting the full (wide) canvas.
+      const sp=44, su=Math.min(_stageW-sp*2, _stageH-sp*2);
+      grow(_stageW/2-su/2, _stageH/2-su/2); grow(_stageW/2+su/2, _stageH/2+su/2);
+      continue;
+    }
     const d = cmd.diam||16;
     const r = d * 0.65; // half stroke + rib overhang
     if (cmd.type==='rebar-path'||cmd.type==='ortho-bar') {

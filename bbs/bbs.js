@@ -575,21 +575,77 @@ $('#printBBS').addEventListener('click', async () => {
     const fontSize     = 8;
     const sketchMaxH   = 16;   // max sketch height per row (mm)
 
-    // ── Column layout — proportional weights, normalised to fill usableW ──
+    // ── Column layout — widths fit to actual content, then normalised to fill usableW ──
     const cols = [
-      { key:'idx',    title:'#',             w:8,  align:'right'  },
-      { key:'member', title:'Member',        w:33, align:'left'   },
-      { key:'mark',   title:'Mark',          w:15, align:'left'   },
-      { key:'dia',    title:'Dia',           w:11, align:'right'  },
-      { key:'shape',  title:'Shape',         w:33, align:'left'   },
-      { key:'sketch', title:'Sketch',        w:34, align:'center' },
-      { key:'cl',     title:'CL/Bar (mm)',   w:21, align:'right'  },
-      { key:'qty',    title:'Qty',           w:11, align:'right'  },
-      { key:'totL',   title:'Total L (m)',   w:22, align:'right'  },
-      { key:'wtm',    title:'Wt/m (kg)',     w:20, align:'right'  },
-      { key:'totW',   title:'Total Wt (kg)', w:23, align:'right'  },
-      { key:'rem',    title:'Remarks',       w:46, align:'left'   },
+      { key:'idx',    title:'#',             align:'right'  },
+      { key:'member', title:'Member',        align:'left'   },
+      { key:'mark',   title:'Mark',          align:'left'   },
+      { key:'dia',    title:'Dia',           align:'right'  },
+      { key:'shape',  title:'Shape',         align:'left'   },
+      { key:'sketch', title:'Sketch',        align:'center' },
+      { key:'cl',     title:'CL/Bar (mm)',   align:'right'  },
+      { key:'qty',    title:'Qty',           align:'right'  },
+      { key:'totL',   title:'Total L (m)',   align:'right'  },
+      { key:'wtm',    title:'Wt/m (kg)',     align:'right'  },
+      { key:'totW',   title:'Total Wt (kg)', align:'right'  },
+      { key:'rem',    title:'Remarks',       align:'left'   },
     ];
+
+    // sanitize for measurement consistency with how values are drawn later
+    const saniM = s => String(s == null ? '' : s).replace(/⌀/g, 'Ø');
+    // Every string a column must hold (header + all cells + totals), per key
+    const cellStrings = key => {
+      if (key === 'sketch') return [];
+      const out = [];
+      rows.forEach((r,i) => {
+        switch (key) {
+          case 'idx':    out.push(String(i+1)); break;
+          case 'member': out.push(saniM(r.member||'')); break;
+          case 'mark':   out.push(saniM(r.mark||'')); break;
+          case 'dia':    out.push(String(r.dia)); break;
+          case 'shape':  out.push(saniM(r.shapeLabel||'')); break;
+          case 'cl':     out.push(fmt0(r.clPerBarMm)); break;
+          case 'qty':    out.push(String(r.qty)); break;
+          case 'totL':   out.push(fmt3(r.totalLenM)); break;
+          case 'wtm':    out.push(fmt3(r.unitWtKgPerM)); break;
+          case 'totW':   out.push(fmt3(r.totalWtKg)); break;
+          case 'rem':    out.push(saniM(r.remarks||'')); break;
+        }
+      });
+      return out;
+    };
+    const SKETCH_W  = 30;   // images: fixed natural width (mm)
+    const MIN_W     = 7;    // floor so headers/numbers never collapse (mm)
+    const FLEX_MIN  = 20;   // smallest a free-text column may shrink to (mm)
+    // Free-text columns absorb leftover/overflow width; the rest are pinned to
+    // their content so numbers and short headers never wrap or clip.
+    const FLEX = new Set(['member','shape','rem']);
+
+    pdf.setFontSize(fontSize);
+    // Header measured by its longest word so multi-word titles can wrap across
+    // the 2-line header row instead of forcing a wide column.
+    const longestWord = t => t.split(/\s+/).reduce((m,w)=>Math.max(m, pdf.getTextWidth(w)), 0);
+    cols.forEach(c => {
+      if (c.key === 'sketch') { c.nat = SKETCH_W; return; }
+      pdf.setFont('helvetica','bold');
+      let natural = longestWord(c.title);
+      pdf.setFont('helvetica','normal');
+      for (const s of cellStrings(c.key)) {
+        const w = pdf.getTextWidth(s);
+        if (w > natural) natural = w;
+      }
+      c.nat = Math.max(MIN_W, natural + 2*pad);
+    });
+
+    // Pin fixed columns to content; share the remaining width among flex columns.
+    const fixedSum   = cols.filter(c=>!FLEX.has(c.key)).reduce((a,c)=>a+c.nat,0);
+    const flexCols   = cols.filter(c=> FLEX.has(c.key));
+    const flexNatSum = flexCols.reduce((a,c)=>a+c.nat,0) || 1;
+    const avail      = usableW - fixedSum;
+    cols.forEach(c => { if (!FLEX.has(c.key)) c.w = c.nat; });
+    flexCols.forEach(c => { c.w = Math.max(FLEX_MIN, avail * (c.nat/flexNatSum)); });
+
+    // Normalise to fill usableW exactly (corrects FLEX_MIN clamping / rounding).
     const wsum = cols.reduce((a,c)=>a+c.w,0);
     let xacc = margin;
     cols.forEach(c => { c.w = c.w * usableW / wsum; c.x = xacc; xacc += c.w; });
@@ -627,7 +683,6 @@ $('#printBBS').addEventListener('click', async () => {
         ['Name of Work',   projectInfo.project || '-'],
         ['Name of Agency', projectInfo.agency  || '-'],
         ['Reference',      projectInfo.ref     || '-'],
-        ['Date',           new Date().toLocaleDateString()],
       ];
       pdf.setFontSize(9);
       const labelW = 40;
@@ -743,10 +798,10 @@ $('#printBBS').addEventListener('click', async () => {
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
     pdf.setTextColor(0,0,0);
     const labelW = cols.slice(0,8).reduce((a,c)=>a+c.w,0);
-    // Re-assert the grey fill before every cell: text() in between resets the
+    // Re-assert the white fill before every cell: text() in between resets the
     // active fill colour to the text colour (black), which would otherwise
     // paint the following cells solid black.
-    const totCell = (x, w) => { pdf.setFillColor(230,230,230); pdf.rect(x, y, w, totH, 'FD'); };
+    const totCell = (x, w) => { pdf.setFillColor(255,255,255); pdf.rect(x, y, w, totH, 'FD'); };
     totCell(margin, labelW);
     pdf.text('Totals:', margin + labelW - pad, y + pad, { align:'right', baseline:'top' });
     totCell(col('totL').x, col('totL').w);
@@ -758,15 +813,17 @@ $('#printBBS').addEventListener('click', async () => {
 
     // ── Page-number footers ──
     const pageCount = pdf.internal.getNumberOfPages();
-    pdf.setFont('helvetica','normal'); pdf.setFontSize(8); pdf.setTextColor(90,90,90);
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(8); pdf.setTextColor(0,0,0);
     for (let p = 1; p <= pageCount; p++) {
       pdf.setPage(p);
       pdf.text(`Page ${p} of ${pageCount}`, pageW - margin, pageH - 4, { align:'right' });
     }
-    pdf.setTextColor(0,0,0);
 
     const proj = (projectInfo.project || 'BBS').replace(/[^a-zA-Z0-9_-]/g,'_');
-    pdf.save(`${proj}_BBS.pdf`);
+    // Cap the export name at 50 chars while preserving the .pdf extension
+    let fileName = `${proj}_BBS.pdf`;
+    if (fileName.length > 50) fileName = fileName.slice(0, 46) + '.pdf';
+    pdf.save(fileName);
   } catch (err) {
     console.error('PDF export failed:', err);
     alert('PDF export failed. See console for details.');
