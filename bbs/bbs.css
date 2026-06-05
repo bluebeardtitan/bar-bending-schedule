@@ -157,6 +157,11 @@ button:active{transform:translateY(0)}
 .hidden{display:none!important}
 .right{text-align:right}
 
+/* ---- Add-bar form — extra breathing room between rows ---- */
+#barForm .frow{margin-bottom:18px}
+#barForm .frow:last-child{margin-bottom:0}
+#barForm #dimBlock{margin-bottom:18px}
+
 /* ---- Form feedback ---- */
 .form-feedback{
   font-size:12px;font-weight:600;padding:4px 10px;
@@ -168,6 +173,18 @@ button:active{transform:translateY(0)}
 
 /* ---- Form actions row ---- */
 .form-actions{border-top:1px solid var(--border);padding-top:10px;margin-top:4px}
+
+/* ---- Info panel 2-column grid ---- */
+.info-grid{
+  display:grid;
+  grid-template-columns:3fr 2fr;
+  gap:var(--row-gap);
+  margin-bottom:var(--row-gap);
+}
+.info-col-main,.info-col-side{display:flex;flex-direction:column;gap:var(--row-gap)}
+.info-col-side .fgroup:last-child{flex:1;display:flex;flex-direction:column}
+.info-col-side .fgroup:last-child textarea{flex:1}
+@media(max-width:580px){.info-grid{grid-template-columns:1fr}}
 
 /* ---- Custom legs list ---- */
 .custom-list{display:flex;flex-direction:column;gap:6px;margin:8px 0}
@@ -197,6 +214,13 @@ tfoot td{border-top:2px solid var(--border);font-weight:700}
 /* ---- Print header (hidden on screen) ---- */
 #printWrapper{display:block}
 #printHeader{display:none}
+/* Base styling so the header also renders correctly in the html2canvas PDF
+   capture (which uses screen media, not the @media print rules below). */
+#pmHeaderTitle{font-size:18px;font-weight:800;text-align:center;color:#000;margin-bottom:4px;letter-spacing:.03em}
+#printTitle{font-size:16px;font-weight:700;text-align:center;color:#000;margin-bottom:8px;letter-spacing:.05em}
+.print-meta-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;color:#000}
+.print-meta-table td{border:1px solid #999;padding:4px 7px}
+.print-meta-table .pml{font-weight:700;background:#f5f5f5;width:120px;white-space:nowrap}
 
 /* =========================================
    Rust Theme (light)
@@ -284,6 +308,26 @@ dialog{border:none}
 dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
 
 /* =========================================
+   PDF export — high-contrast black & white theme.
+   Applied to the html2canvas clone via onclone (screen media, so the
+   @media print block below does not apply during PDF capture).
+   ========================================= */
+body.pdf-export{background:#fff!important;color:#000!important}
+body.pdf-export #printHeader{display:block!important;color:#000!important}
+body.pdf-export #pmHeaderTitle{color:#000!important}
+body.pdf-export #printTitle{color:#000!important;border-bottom:2.5px solid #000}
+body.pdf-export .print-meta-table{border-collapse:collapse;color:#000}
+body.pdf-export .print-meta-table td{border:1.5px solid #000!important;color:#000!important;background:#fff!important;padding:4px 8px}
+body.pdf-export .print-meta-table .pml{font-weight:800!important;color:#000!important;background:#fff!important}
+body.pdf-export #bbsTable{border-collapse:collapse!important;color:#000!important;background:#fff!important}
+body.pdf-export #bbsTable th,
+body.pdf-export #bbsTable td{border:1.4px solid #000!important;color:#000!important;background:#fff!important}
+body.pdf-export #bbsTable thead th{background:#000!important;color:#fff!important;font-weight:800!important;border-color:#000!important}
+body.pdf-export #bbsTable tfoot td{font-weight:800!important;background:#e6e6e6!important;color:#000!important}
+body.pdf-export #bbsTable tbody tr td:last-child{display:none!important}
+body.pdf-export #bbsTable tbody tr td img{max-width:160px!important;max-height:104px!important;object-fit:contain!important;background:#fff!important}
+
+/* =========================================
    Print
    ========================================= */
 @media print {
@@ -299,6 +343,7 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
   #scheduleSection{display:block!important}
 
   #printHeader{display:block!important;margin-bottom:10px;color:#000!important}
+  #pmHeaderTitle{font-size:18px;font-weight:800;text-align:center;color:#000!important;margin-bottom:4px;letter-spacing:.03em}
   #printTitle{font-size:16px;font-weight:700;text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px;letter-spacing:.05em}
 
   .print-meta-table{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px}

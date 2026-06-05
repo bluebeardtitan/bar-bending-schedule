@@ -7,27 +7,28 @@ const $$ = sel => Array.from(document.querySelectorAll(sel));
 /* =========================
    Project Info
    ========================= */
-const INFO_DEFAULTS = { project:'', agency:'', ref:'', preparedBy:'' };
+const INFO_DEFAULTS = { header:'', project:'', agency:'', ref:'' };
 let projectInfo = loadInfo();
 
 function loadInfo(){
   const s = localStorage.getItem('bbs_info');
-  return s ? JSON.parse(s) : Object.assign({}, INFO_DEFAULTS);
+  // Merge over defaults so older saves (missing header / stale fields) still work
+  return Object.assign({}, INFO_DEFAULTS, s ? JSON.parse(s) : {});
 }
 function saveInfoToStorage(){
   localStorage.setItem('bbs_info', JSON.stringify(projectInfo));
 }
 function applyInfoToForm(){
-  $('#infoProject').value   = projectInfo.project    || '';
-  $('#infoAgency').value    = projectInfo.agency     || '';
-  $('#infoRef').value       = projectInfo.ref        || '';
-  $('#infoPreparedBy').value = projectInfo.preparedBy || '';
+  $('#infoHeader').value  = projectInfo.header  || '';
+  $('#infoProject').value = projectInfo.project || '';
+  $('#infoAgency').value  = projectInfo.agency  || '';
+  $('#infoRef').value     = projectInfo.ref     || '';
 }
 function readInfoFromForm(){
-  projectInfo.project    = $('#infoProject').value.trim();
-  projectInfo.agency     = $('#infoAgency').value.trim();
-  projectInfo.ref        = $('#infoRef').value.trim();
-  projectInfo.preparedBy = $('#infoPreparedBy').value.trim();
+  projectInfo.header  = $('#infoHeader').value.trim();
+  projectInfo.project = $('#infoProject').value.trim();
+  projectInfo.agency  = $('#infoAgency').value.trim();
+  projectInfo.ref     = $('#infoRef').value.trim();
 }
 /* Fill the print-header meta cells */
 function escapeHTML(str){
@@ -40,9 +41,17 @@ function updatePrintMeta(){
     return escapeHTML(v).replace(/\r?\n/g,'<br>');
   };
   $('#pmProject').innerHTML    = render(projectInfo.project);
-  $('#pmAgency').innerHTML     = render(projectInfo.agency);
-  $('#pmRef').innerHTML        = render(projectInfo.ref);
-  $('#pmPreparedBy').innerHTML = render(projectInfo.preparedBy);
+  $('#pmAgency').innerHTML      = render(projectInfo.agency);
+  $('#pmRef').innerHTML         = render(projectInfo.ref);
+  // Optional header title — only shown when filled
+  const titleEl = $('#pmHeaderTitle');
+  if (projectInfo.header) {
+    titleEl.innerHTML  = escapeHTML(projectInfo.header).replace(/\r?\n/g,'<br>');
+    titleEl.style.display = 'block';
+  } else {
+    titleEl.textContent = '';
+    titleEl.style.display = 'none';
+  }
 }
 
 $('#btnInfo').addEventListener('click', () => {
@@ -148,6 +157,8 @@ const CL = {
   },
   crank:   ({span,depth,angle,dia}) => span + (depth/Math.sin(angle*Math.PI/180))*2 - 2*bendDeduction(angle,dia),
   chair:   ({height,top,base}) => 2*height + top + base,
+  'hook-semi': ({len, ends, dia}) => len + (ends==='both'?2:1) * hookLength(180, dia),
+  'hook-L':    ({len, ends, dia}) => len + (ends==='both'?2:1) * hookLength(90,  dia),
   custom:  ({items,dia}) => {
     let t=0;
     for(const it of items){
@@ -183,7 +194,7 @@ function render(){
       <td class="mono right">${r.dia}</td>
       <td>${r.shapeLabel}</td>
       <td style="text-align:center;padding:4px 6px">${r.shapeImg
-        ? `<img src="${r.shapeImg}" alt="shape" style="max-width:80px;max-height:52px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px">`
+        ? `<img src="${r.shapeImg}" alt="shape" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px">`
         : '<span class="subtle">—</span>'}</td>
       <td class="mono right">${fmt0(r.clPerBarMm)}</td>
       <td class="mono right">${r.qty}</td>
@@ -324,6 +335,14 @@ $('#barForm').addEventListener('submit', e=>{
   }else if(shape==='chair'){
     const height=Number($('#CH_height').value),top=Number($('#CH_top').value),base=Number($('#CH_base').value);
     cl=CL.chair({height,top,base,dia}); shapeLabel=`Chair ${height}h`;
+  }else if(shape==='hook-semi'){
+    const len=Number($('#HS_len').value), ends=$('#HS_ends').value;
+    cl=CL['hook-semi']({len,ends,dia});
+    shapeLabel=`Straight 180° hook (${ends==='both'?'both ends':ends+' end'})`;
+  }else if(shape==='hook-L'){
+    const len=Number($('#HL_len').value), ends=$('#HL_ends').value;
+    cl=CL['hook-L']({len,ends,dia});
+    shapeLabel=`Straight 90° hook (${ends==='both'?'both ends':ends+' end'})`;
   }else if(shape==='custom'){
     const items=customItems.filter(x=>x.type!=='deleted');
     cl=CL.custom({items,dia}); shapeLabel='Custom';
@@ -358,8 +377,10 @@ $('#barForm').addEventListener('submit', e=>{
   else if(shape==='circle'){ row.inputs={diaVal:Number($('#C_dia').value),cover:Number($('#C_cover').value)}; }
   else if(shape==='spiral'){ row.inputs={diaVal:Number($('#SP_dia').value),pitch:Number($('#SP_pitch').value),turns:Number($('#SP_turns').value),cover:Number($('#SP_cover').value)}; }
   else if(shape==='crank'){  row.inputs={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value)}; }
-  else if(shape==='chair'){  row.inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)}; }
-  else if(shape==='custom'){ row.inputs={items:customItems.filter(x=>x.type!=='deleted')}; }
+  else if(shape==='chair'){     row.inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)}; }
+  else if(shape==='hook-semi'){ row.inputs={len:Number($('#HS_len').value),ends:$('#HS_ends').value}; }
+  else if(shape==='hook-L'){    row.inputs={len:Number($('#HL_len').value),ends:$('#HL_ends').value}; }
+  else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted')}; }
 
   rows.push(row); persist(); render();
   if(window._showFeedback) window._showFeedback(`✔ Added ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
@@ -405,7 +426,9 @@ $('#bbsTable').addEventListener('click', e=>{
     if(r.shape==='circle'){  $('#C_dia').value=inp.diaVal||''; $('#C_cover').value=inp.cover||25; }
     if(r.shape==='spiral'){  $('#SP_dia').value=inp.diaVal||''; $('#SP_pitch').value=inp.pitch||''; $('#SP_turns').value=inp.turns||''; $('#SP_cover').value=inp.cover||25; }
     if(r.shape==='crank'){   $('#CR_span').value=inp.span||''; $('#CR_depth').value=inp.depth||''; $('#CR_angle').value=inp.angle||45; }
-    if(r.shape==='chair'){   $('#CH_height').value=inp.height||''; $('#CH_top').value=inp.top||''; $('#CH_base').value=inp.base||''; }
+    if(r.shape==='chair'){     $('#CH_height').value=inp.height||''; $('#CH_top').value=inp.top||''; $('#CH_base').value=inp.base||''; }
+    if(r.shape==='hook-semi'){ $('#HS_len').value=inp.len||''; $('#HS_ends').value=inp.ends||'both'; }
+    if(r.shape==='hook-L'){    $('#HL_len').value=inp.len||''; $('#HL_ends').value=inp.ends||'both'; }
     if(r.shape==='custom'){
       resetCustom();
       for(const it of (inp.items||[])){ if(it.type==='leg') addLeg(it.len); else if(it.type==='bend') addBend(it.angle,it.hook); }
@@ -462,13 +485,11 @@ function infoLine(label,value){
 function toCSV(){
   const lines = [];
   // Project info block
+  if (projectInfo.header) lines.push(csvEscape(projectInfo.header));
   lines.push('BAR BENDING SCHEDULE (BBS)');
-  lines.push(infoLine('Project',        projectInfo.project));
-  lines.push(infoLine('Agency',         projectInfo.agency));
+  lines.push(infoLine('Name of Work',   projectInfo.project));
+  lines.push(infoLine('Name of Agency', projectInfo.agency));
   lines.push(infoLine('Reference',      projectInfo.ref));
-  lines.push(infoLine('Prepared By',    projectInfo.preparedBy));
-  const now = new Date();
-  lines.push(infoLine('Date', `${String(now.getDate()).padStart(2,'0')}-${String(now.getMonth()+1).padStart(2,'0')}-${now.getFullYear()}`));
   lines.push(''); // blank separator
 
   // Table headers
@@ -516,7 +537,7 @@ $('#loadJSON').addEventListener('click',()=>{
         const data=JSON.parse(fr.result);
         if(Array.isArray(data.rows))   rows = data.rows;
         if(data.settings)              { settings=data.settings; saveSettings(); }
-        if(data.projectInfo)           { projectInfo=data.projectInfo; applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); }
+        if(data.projectInfo)           { projectInfo=Object.assign({},INFO_DEFAULTS,data.projectInfo); applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); }
         persist(); render();
       }catch(err){ alert('Invalid JSON file.'); }
     };
@@ -530,8 +551,6 @@ $('#loadJSON').addEventListener('click',()=>{
    ========================= */
 $('#printBBS').addEventListener('click', async () => {
   updatePrintMeta();
-  const d = new Date();
-  $('#printDate').textContent = `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
 
   const btn = $('#printBBS');
   btn.disabled = true;
@@ -551,11 +570,15 @@ $('#printBBS').addEventListener('click', async () => {
     if (actionTh) actionTh.style.display = 'none';
     actionTds.forEach(td => td.style.display = 'none');
 
+    // Higher scale → crisper text + shape sketches in the exported PDF.
+    // onclone applies the high-contrast B&W theme to the rendered copy only
+    // (html2canvas uses screen media, so @media print rules don't apply).
     const canvas = await html2canvas(wrapper, {
-      scale: 2,
+      scale: 4,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
+      onclone: (doc) => { doc.body.classList.add('pdf-export'); },
     });
 
     header.style.display = prevHeaderDisplay;

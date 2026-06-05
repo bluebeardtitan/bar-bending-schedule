@@ -34,15 +34,27 @@
   <div id="panelSlot">
     <section class="card collapsed" id="infoPanel" aria-live="polite">
       <h2 class="card-title">Project Information</h2>
-      <div class="frow">
-        <div class="fgroup fg-3"><label for="infoProject">Work / Project Name</label>
-          <textarea id="infoProject" rows="2" placeholder="e.g., Residential Block A – Ground Floor"></textarea></div>
-        <div class="fgroup fg-3"><label for="infoAgency">Agency / Firm</label>
-          <textarea id="infoAgency" rows="2" placeholder="e.g., ABC Structural Engineers Pvt. Ltd."></textarea></div>
-        <div class="fgroup fg-2"><label for="infoRef">Ref / Drawing No.</label>
-          <textarea id="infoRef" rows="2" placeholder="DWG-S-101, Rev. 2"></textarea></div>
-        <div class="fgroup fg-2"><label for="infoPreparedBy">Prepared By</label>
-          <textarea id="infoPreparedBy" rows="2" placeholder="Eng. John Doe"></textarea></div>
+      <div class="info-grid">
+        <div class="info-col-main">
+          <div class="fgroup">
+            <label for="infoHeader">Header <span class="subtle">(optional)</span></label>
+            <textarea id="infoHeader" rows="2" placeholder="e.g., ABC Structural Engineers Pvt. Ltd.&#10;Dept. of Civil Engineering, Mumbai"></textarea>
+          </div>
+          <div class="fgroup">
+            <label for="infoProject">Name of Work</label>
+            <textarea id="infoProject" rows="2" placeholder="e.g., Residential Block A – Ground Floor&#10;Construction of RCC Slab over Plinth Beam"></textarea>
+          </div>
+        </div>
+        <div class="info-col-side">
+          <div class="fgroup">
+            <label for="infoAgency">Name of Agency</label>
+            <input type="text" id="infoAgency" placeholder="e.g., PWD Division No. 2">
+          </div>
+          <div class="fgroup">
+            <label for="infoRef">Reference</label>
+            <textarea id="infoRef" rows="3" placeholder="DWG-S-101, Rev. 2&#10;Estimate No. 45/2024"></textarea>
+          </div>
+        </div>
       </div>
       <div class="toolbar">
         <button class="btn small primary" id="saveInfo">💾 Save Info</button>
@@ -127,6 +139,8 @@
             <option value="spiral">Spiral / Helix</option>
             <option value="crank">Crank Bar</option>
             <option value="chair">Chair / Spacer</option>
+            <option value="hook-semi">Straight + Semi-Circular Hook (180°)</option>
+            <option value="hook-L">Straight + L-Hook (90°)</option>
             <option value="custom">Other / Custom</option>
           </select>
         </div>
@@ -230,6 +244,32 @@
           </div>
         </div>
 
+        <div class="shape shape-hook-semi hidden">
+          <div class="frow">
+            <div class="fgroup fg-3"><label for="HS_len">Bar Length A (mm)</label>
+              <input id="HS_len" type="number" min="1" step="1" tabindex="10" placeholder="e.g. 3000" /></div>
+            <div class="fgroup fg-2"><label for="HS_ends">Hook at</label>
+              <select id="HS_ends" tabindex="11">
+                <option value="both">Both ends</option>
+                <option value="left">Left end only</option>
+                <option value="right">Right end only</option>
+              </select></div>
+          </div>
+        </div>
+
+        <div class="shape shape-hook-L hidden">
+          <div class="frow">
+            <div class="fgroup fg-3"><label for="HL_len">Bar Length A (mm)</label>
+              <input id="HL_len" type="number" min="1" step="1" tabindex="10" placeholder="e.g. 3000" /></div>
+            <div class="fgroup fg-2"><label for="HL_ends">Hook at</label>
+              <select id="HL_ends" tabindex="11">
+                <option value="both">Both ends</option>
+                <option value="left">Left end only</option>
+                <option value="right">Right end only</option>
+              </select></div>
+          </div>
+        </div>
+
         <div class="shape shape-custom hidden">
           <div class="frow">
             <div class="fgroup fg-7">
@@ -293,11 +333,12 @@
 
     <div id="printWrapper">
       <div id="printHeader">
+        <div id="pmHeaderTitle" style="display:none"></div>
         <div id="printTitle">BAR BENDING SCHEDULE (BBS)</div>
         <table class="print-meta-table"><tbody>
-          <tr><td class="pml">Project</td><td class="pmv" id="pmProject">-</td><td class="pml">Agency</td><td class="pmv" id="pmAgency">-</td></tr>
-          <tr><td class="pml">Reference</td><td class="pmv" id="pmRef">-</td><td class="pml">Prepared By</td><td class="pmv" id="pmPreparedBy">-</td></tr>
-          <tr><td class="pml">Date</td><td class="pmv" id="printDate" colspan="3">-</td></tr>
+          <tr><td class="pml">Name of Work</td><td class="pmv" id="pmProject" colspan="3">-</td></tr>
+          <tr><td class="pml">Name of Agency</td><td class="pmv" id="pmAgency" colspan="3">-</td></tr>
+          <tr><td class="pml">Reference</td><td class="pmv" id="pmRef" colspan="3">-</td></tr>
         </tbody></table>
       </div>
       <div id="bbsTableContainer" style="overflow:auto;margin-top:10px">
@@ -349,7 +390,6 @@
 <script src="bbs/html2canvas.min.js"></script>
 <script src="bbs/jspdf.umd.min.js"></script>
 <script src="bbs/bbs.js"></script>
-<script src="bbs/shape-library.js"></script>
 <script src="bbs/shape-drawer.js"></script>
 </body>
 </html>

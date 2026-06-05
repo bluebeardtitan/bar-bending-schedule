@@ -641,8 +641,11 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
     mapPt =p=>project(p[0]*scale,(p[1]||0)*scale,(p[2]||0)*scale);
     mapDim=p=>project(p[0]*scale,(p[1]||0)*scale,(p[2]||0)*scale);
   } else {
-    mapPt =p=>({ x:pad+p[0]*sw, y:pad+p[1]*sh });
-    mapDim=p=>({ x:pad+p[0]*sw, y:pad+p[1]*sh });
+    // Uniform scale + centre so the 0..1 box keeps its aspect ratio on any
+    // canvas shape (independent x*sw / y*sh would stretch it to the canvas).
+    const u=Math.min(sw,sh);
+    mapPt =p=>({ x:cx+(p[0]-0.5)*u, y:cy+(p[1]-0.5)*u });
+    mapDim=p=>({ x:cx+(p[0]-0.5)*u, y:cy+(p[1]-0.5)*u });
   }
 
   (def.segments||[]).forEach(seg=>{
@@ -652,10 +655,22 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
     else            _shapeRenderer(seg.style)(ctx,pts,d);
   });
 
+  const dimUnit=Math.min(sw,sh);   // re-expand fractional perp/size lengths
   (def.dims||[]).forEach(dm=>{
-    const a=mapDim(dm.from), b=mapDim(dm.to);
-    const off=dm.off||[0,0];
-    drawDim(ctx,a.x+off[0],a.y+off[1],b.x+off[0],b.y+off[1],dm.label);
+    const sizePx = dm.size!=null ? dm.size*dimUnit : undefined;
+    if (dm.type==='angular') {
+      drawDimAngular(ctx, mapDim(dm.vertex), mapDim(dm.a), mapDim(dm.b), dm.label||'', sizePx);
+    } else if (dm.type==='leader') {
+      drawDimLeader(ctx, mapDim(dm.origin), mapDim(dm.elbow), dm.text?mapDim(dm.text):null, dm.label||'', sizePx);
+    } else if (dm.perp!=null) {
+      const a=mapDim(dm.from), b=mapDim(dm.to);
+      drawDimAligned(ctx, a, b, dm.perp*dimUnit, dm.label||'', sizePx);
+    } else {
+      // Legacy hand-authored aligned dim: fixed offset + [dx,dy] label nudge
+      const a=mapDim(dm.from), b=mapDim(dm.to);
+      const off=dm.off||[0,0];
+      drawDim(ctx,a.x+off[0],a.y+off[1],b.x+off[0],b.y+off[1],dm.label);
+    }
   });
 }
 
@@ -666,9 +681,13 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
    Konva.Shape sceneFunc for Konva rendering).
    ===================================================== */
 
+/* Base font size the original dim metrics were tuned at; size params scale from here. */
+const DIM_BASE = 11;
+
 /* ── shared helpers ── */
-function _dimArrow(ctx, px, py, ax, ay, flip) {
-  const aw=9, ah=3.5;
+function _dimArrow(ctx, px, py, ax, ay, flip, size) {
+  const s = (size || DIM_BASE) / DIM_BASE;
+  const aw=9*s, ah=3.5*s;
   ctx.beginPath();
   ctx.moveTo(px, py);
   ctx.lineTo(px - ax*aw*flip + ay*ah*flip, py - ay*aw*flip - ax*ah*flip);
@@ -676,18 +695,20 @@ function _dimArrow(ctx, px, py, ax, ay, flip) {
   ctx.closePath(); ctx.fill();
 }
 
-function _dimLabel(ctx, mx, my, label, angle) {
+function _dimLabel(ctx, mx, my, label, angle, size) {
+  const fs = size || DIM_BASE;
   ctx.save();
-  ctx.font = 'bold 11px ui-monospace,Consolas,monospace';
+  ctx.font = `bold ${fs}px ui-monospace,Consolas,monospace`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const tw = ctx.measureText(label).width + 8;
+  const tw = ctx.measureText(label).width + fs*0.7;
+  const bh = fs*0.82;   // half background-box height
   ctx.translate(mx, my);
   // Keep text readable — flip if angle would render upside-down
   const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
   const rot = (a > Math.PI/2 && a < Math.PI*1.5) ? angle + Math.PI : angle;
   ctx.rotate(rot);
   ctx.fillStyle = '#fff';
-  ctx.fillRect(-tw/2, -9, tw, 18);
+  ctx.fillRect(-tw/2, -bh, tw, bh*2);
   ctx.fillStyle = GRAY.dim;
   ctx.fillText(label, 0, 0);
   ctx.restore();
@@ -696,7 +717,7 @@ function _dimLabel(ctx, mx, my, label, angle) {
 /* ── 1. ALIGNED dimension — true point-to-point distance ──
    Clicks: p1, p2, then offset (perpendicular side).
    Renders: two extension lines + one dimension line with arrows + label. */
-function drawDimAligned(ctx, p1, p2, offset, label) {
+function drawDimAligned(ctx, p1, p2, offset, label, size) {
   const dx = p2.x - p1.x, dy = p2.y - p1.y;
   const len = Math.hypot(dx, dy);
   if (len < 4) return;
@@ -728,13 +749,13 @@ function drawDimAligned(ctx, p1, p2, offset, label) {
   ctx.beginPath(); ctx.moveTo(d1.x, d1.y); ctx.lineTo(d2.x, d2.y); ctx.stroke();
 
   // Arrows
-  _dimArrow(ctx, d1.x, d1.y, ax, ay, -1);
-  _dimArrow(ctx, d2.x, d2.y, ax, ay,  1);
+  _dimArrow(ctx, d1.x, d1.y, ax, ay, -1, size);
+  _dimArrow(ctx, d2.x, d2.y, ax, ay,  1, size);
 
   // Label at midpoint, rotated along dim line
   const mx = (d1.x+d2.x)/2, my = (d1.y+d2.y)/2;
   const ang = Math.atan2(dy, dx);
-  _dimLabel(ctx, mx, my - ny*8, label, ang);
+  _dimLabel(ctx, mx, my - ny*8, label, ang, size);
 
   ctx.restore();
 }
@@ -742,7 +763,7 @@ function drawDimAligned(ctx, p1, p2, offset, label) {
 /* ── 2. ANGULAR dimension — angle at a vertex between two arms ──
    Clicks: vertex, arm-A end, arm-B end.
    Renders: arc + two radial lines from vertex + angle label. */
-function drawDimAngular(ctx, vertex, ptA, ptB, label) {
+function drawDimAngular(ctx, vertex, ptA, ptB, label, size) {
   const rA = Math.hypot(ptA.x-vertex.x, ptA.y-vertex.y);
   const rB = Math.hypot(ptB.x-vertex.x, ptB.y-vertex.y);
   const r  = Math.min(rA, rB, 60) * 0.72 + 20;  // arc radius
@@ -784,11 +805,11 @@ function drawDimAngular(ctx, vertex, ptA, ptB, label) {
   const arrowAng = aEnd + (sweep > 0 ? Math.PI/2 : -Math.PI/2);
   const arrowPx = vertex.x + Math.cos(aEnd)*r;
   const arrowPy = vertex.y + Math.sin(aEnd)*r;
-  _dimArrow(ctx, arrowPx, arrowPy, Math.cos(arrowAng), Math.sin(arrowAng), 1);
+  _dimArrow(ctx, arrowPx, arrowPy, Math.cos(arrowAng), Math.sin(arrowAng), 1, size);
 
   // Label at arc midpoint
   const aMid = aA + sweep/2;
-  _dimLabel(ctx, vertex.x + Math.cos(aMid)*(r+18), vertex.y + Math.sin(aMid)*(r+18), lbl, aMid + Math.PI/2);
+  _dimLabel(ctx, vertex.x + Math.cos(aMid)*(r+18), vertex.y + Math.sin(aMid)*(r+18), lbl, aMid + Math.PI/2, size);
 
   // Vertex dot
   ctx.beginPath(); ctx.arc(vertex.x, vertex.y, 3, 0, Math.PI*2); ctx.fill();
@@ -799,8 +820,9 @@ function drawDimAngular(ctx, vertex, ptA, ptB, label) {
 /* ── 3. LEADER dimension — annotated leader line ──
    Clicks: origin (arrowhead tip), elbow point, (optional) text anchor.
    Two-segment kinked line ending in a short horizontal text shelf. */
-function drawDimLeader(ctx, origin, elbow, textPt, label) {
+function drawDimLeader(ctx, origin, elbow, textPt, label, size) {
   const lbl = label || 'Label';
+  const fs  = size || DIM_BASE;
 
   ctx.save();
   ctx.strokeStyle = GRAY.dim; ctx.fillStyle = GRAY.dim; ctx.lineWidth = 1.2;
@@ -825,21 +847,22 @@ function drawDimLeader(ctx, origin, elbow, textPt, label) {
   const len = Math.hypot(dx, dy);
   if (len > 4) {
     const ax = dx/len, ay = dy/len;
-    _dimArrow(ctx, origin.x, origin.y, ax, ay, -1);
+    _dimArrow(ctx, origin.x, origin.y, ax, ay, -1, size);
   }
 
   // Label: placed at textPt (or above elbow if no textPt yet)
   const tx = textPt ? textPt.x : elbow.x + 20;
   const ty = textPt ? textPt.y : elbow.y;
-  ctx.font = 'bold 11px ui-monospace,Consolas,monospace';
+  const bh = fs*0.82;   // half background-box height
+  ctx.font = `bold ${fs}px ui-monospace,Consolas,monospace`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  const tw = ctx.measureText(lbl).width + 8;
-  ctx.fillStyle = '#fff'; ctx.fillRect(tx + 2, ty - 9, tw, 18);
+  const tw = ctx.measureText(lbl).width + fs*0.7;
+  ctx.fillStyle = '#fff'; ctx.fillRect(tx + 2, ty - bh, tw, bh*2);
   ctx.fillStyle = GRAY.dim; ctx.fillText(lbl, tx + 6, ty);
 
   // Underline shelf
   ctx.beginPath();
-  ctx.moveTo(tx + 2, ty + 9); ctx.lineTo(tx + 2 + tw, ty + 9);
+  ctx.moveTo(tx + 2, ty + bh); ctx.lineTo(tx + 2 + tw, ty + bh);
   ctx.stroke();
 
   ctx.restore();
@@ -860,7 +883,7 @@ const drawerHTML = `
   box-shadow:0 32px 80px rgba(0,0,0,.55);overflow:hidden;
   max-height:96vh
 ">
-<div style="display:flex;flex-direction:column;height:100%;max-height:96vh">
+<div style="display:flex;flex-direction:column;max-height:96vh">
   <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
     <span style="font-weight:800;font-size:15px">🔩 Rebar Shape Drawer</span>
     <span style="font-size:11px;color:var(--muted);margin-left:4px">b&w · print-safe</span>
@@ -868,10 +891,10 @@ const drawerHTML = `
     <button id="drawerDone"   class="btn small primary">✔ Use Shape</button>
     <button id="drawerCancel" class="btn small ghost">✕</button>
   </div>
-  <div style="display:flex;flex:1;min-height:0;overflow:hidden">
+  <div style="display:flex;overflow:hidden">
 
     <!-- ── LEFT SIDEBAR ── -->
-    <div style="width:192px;flex-shrink:0;border-right:1px solid var(--border);padding:11px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;font-size:12px">
+    <div id="drawerSidebar" style="width:192px;flex-shrink:0;border-right:1px solid var(--border);padding:11px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;font-size:12px;max-height:calc(96vh - 56px)">
 
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Tool</div>
       <div style="display:flex;flex-direction:column;gap:3px" id="toolBtns">
@@ -948,7 +971,7 @@ const drawerHTML = `
 
     <!-- ── CANVAS AREA ── -->
     <div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
-      <div id="svgCanvasWrap" style="flex:1;position:relative;overflow:hidden;background:#fff;min-height:0">
+      <div id="svgCanvasWrap" style="position:relative;overflow:hidden;background:#fff;width:100%">
         <!-- Konva mounts here; id used by initKonvaStage -->
         <div id="konvaContainer" style="width:100%;height:100%"></div>
         <div id="nodeCounter" style="position:absolute;top:8px;left:50%;transform:translateX(-50%);
@@ -959,7 +982,7 @@ const drawerHTML = `
           <span id="canvasHint">Click=add point · Dbl-click=finish · Esc=cancel · white=print-safe</span>
         </div>
       </div>
-      <div style="display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);align-items:center;flex-shrink:0;background:var(--panel)">
+      <div id="drawerActions" style="display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);align-items:center;flex-shrink:0;background:var(--panel)">
         <button id="drawerUndo"  class="btn small ghost"        style="font-size:11px">↩ Undo</button>
         <button id="drawerClear" class="btn small ghost danger" style="font-size:11px">🗑 Clear</button>
         <span style="flex:1"></span>
@@ -1048,8 +1071,14 @@ function buildShapeDefinition(meta) {
       const steps=24, pts=[];
       for(let i=0;i<steps;i++){const a=i/steps*Math.PI*2; pts.push({x:cmd.cx+Math.cos(a)*cmd.rx,y:cmd.cy+Math.sin(a)*cmd.ry});}
       rawSegments.push({pts,style:'curve',closed:true});
-    } else if (cmd.type === 'dim') {
-      rawDims.push({x1:cmd.x1,y1:cmd.y1,x2:cmd.x2,y2:cmd.y2,label:cmd.label||''});
+    } else if (cmd.type === 'dim-aligned') {
+      rawDims.push({ kind:'aligned', pts:[{x:cmd.p1.x,y:cmd.p1.y},{x:cmd.p2.x,y:cmd.p2.y}], offset:cmd.offset, label:cmd.label||'', size:cmd.size });
+    } else if (cmd.type === 'dim-angular') {
+      rawDims.push({ kind:'angular', pts:[{x:cmd.vertex.x,y:cmd.vertex.y},{x:cmd.ptA.x,y:cmd.ptA.y},{x:cmd.ptB.x,y:cmd.ptB.y}], label:cmd.label||'', size:cmd.size });
+    } else if (cmd.type === 'dim-leader') {
+      const lp=[{x:cmd.origin.x,y:cmd.origin.y},{x:cmd.elbow.x,y:cmd.elbow.y}];
+      if(cmd.textPt) lp.push({x:cmd.textPt.x,y:cmd.textPt.y});
+      rawDims.push({ kind:'leader', pts:lp, label:cmd.label||'', size:cmd.size });
     }
   }
   if (!rawSegments.length) return { error:'Nothing to export — draw at least one bar segment first.' };
@@ -1057,19 +1086,40 @@ function buildShapeDefinition(meta) {
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
   const consider=(x,y)=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;};
   rawSegments.forEach(s=>s.pts.forEach(p=>consider(p.x,p.y)));
-  rawDims.forEach(d=>{consider(d.x1,d.y1);consider(d.x2,d.y2);});
+  rawDims.forEach(d=>d.pts.forEach(p=>consider(p.x,p.y)));
   const bw=maxX-minX||1, bh=maxY-minY||1;
-  const nx=x=>+(((x-minX)/bw)).toFixed(3);
-  const ny=y=>+(((y-minY)/bh)).toFixed(3);
+  /* Uniform scale preserves the drawn aspect ratio; independent x/y scaling
+     here is what distorts the shape into filling the whole canvas on reload.
+     Fit the longer axis into (1 - 2*MARGIN) and centre the shape in the 0..1 box. */
+  const MARGIN=0.08;
+  const span=Math.max(bw,bh)||1;
+  const scale=(1-2*MARGIN)/span;
+  const offX=MARGIN+((1-2*MARGIN)-bw*scale)/2;
+  const offY=MARGIN+((1-2*MARGIN)-bh*scale)/2;
+  const nx=x=>+((offX+(x-minX)*scale)).toFixed(3);
+  const ny=y=>+((offY+(y-minY)*scale)).toFixed(3);
 
   const segments=rawSegments.map(s=>{
     const seg={pts:s.pts.map(p=>[nx(p.x),ny(p.y)]),style:s.style};
     if(s.closed)seg.closed=true;
     return seg;
   });
-  const dims=rawDims.map(d=>({from:[nx(d.x1),ny(d.y1)],to:[nx(d.x2),ny(d.y2)],label:d.label||'A'}));
+  // Perp offset & font size are pixel lengths at draw time; store as fractions
+  // of the bbox span (×scale) so they re-expand proportionally on reload.
+  const frac=v=> v!=null ? +(v*scale).toFixed(4) : undefined;
+  const np=p=>[nx(p.x),ny(p.y)];
+  const dims=rawDims.map(d=>{
+    if(d.kind==='angular')
+      return {type:'angular', vertex:np(d.pts[0]), a:np(d.pts[1]), b:np(d.pts[2]), label:d.label||'A', size:frac(d.size)};
+    if(d.kind==='leader'){
+      const o={type:'leader', origin:np(d.pts[0]), elbow:np(d.pts[1]), label:d.label||'A', size:frac(d.size)};
+      if(d.pts[2]) o.text=np(d.pts[2]);
+      return o;
+    }
+    return {from:np(d.pts[0]), to:np(d.pts[1]), perp:frac(d.offset), label:d.label||'A', size:frac(d.size)};
+  });
   const def={id:meta.id,label:meta.label||meta.id,group:'quick'};
-  if(meta.bs8666)def.bs8666=meta.bs8666;
+  if(meta.shapeCode)def.shapeCode=meta.shapeCode;
   if(meta.formula)def.formula=meta.formula;
   def.segments=segments;
   if(dims.length)def.dims=dims;
@@ -1081,9 +1131,9 @@ function exportDrawnShape() {
   if(!id)return;
   const safeId=id.replace(/[^a-zA-Z0-9_-]/g,'-');
   const label=(prompt('Button label:',safeId)||safeId).trim();
-  const bs8666=(prompt('BS 8666 code (optional):','')||'').trim();
+  const shapeCode=(prompt('Standard code (optional):','')||'').trim();
   const formula=(prompt('Cutting-length formula (optional):','')||'').trim();
-  const result=buildShapeDefinition({id:safeId,label,bs8666,formula});
+  const result=buildShapeDefinition({id:safeId,label,shapeCode,formula});
   if(result.error){alert(result.error);return;}
   showExportPanel(formatCompactShape(result.def),safeId);
 }
@@ -1092,7 +1142,7 @@ function formatCompactShape(def) {
   const q=s=>JSON.stringify(s), ja=a=>JSON.stringify(a);
   const scalars=[];
   scalars.push(`"id": ${q(def.id)}, "label": ${q(def.label)}`);
-  if(def.bs8666) scalars[scalars.length-1]+=`, "bs8666": ${q(def.bs8666)}`;
+  if(def.shapeCode) scalars[scalars.length-1]+=`, "shapeCode": ${q(def.shapeCode)}`;
   if(def.formula) scalars.push(`"formula": ${q(def.formula)}`);
   scalars.push(`"group": ${q(def.group||'quick')}`);
   const segObjs=(def.segments||[]).map(s=>{
@@ -1106,7 +1156,23 @@ function formatCompactShape(def) {
     :`"segments": [\n      ${segObjs.join(',\n      ')}\n      ]`;
   let dimsBlock='';
   if(def.dims&&def.dims.length){
-    const dimObjs=def.dims.map(d=>`{ "from": ${ja(d.from)}, "to": ${ja(d.to)}, "label": ${q(d.label)} }`);
+    const dimObjs=def.dims.map(d=>{
+      const parts=[];
+      if(d.type==='angular'){
+        parts.push(`"type": "angular"`);
+        parts.push(`"vertex": ${ja(d.vertex)}, "a": ${ja(d.a)}, "b": ${ja(d.b)}`);
+      } else if(d.type==='leader'){
+        parts.push(`"type": "leader"`);
+        parts.push(`"origin": ${ja(d.origin)}, "elbow": ${ja(d.elbow)}`);
+        if(d.text) parts.push(`"text": ${ja(d.text)}`);
+      } else {
+        parts.push(`"from": ${ja(d.from)}, "to": ${ja(d.to)}`);
+        if(d.perp!=null) parts.push(`"perp": ${d.perp}`);
+      }
+      parts.push(`"label": ${q(d.label)}`);
+      if(d.size!=null) parts.push(`"size": ${d.size}`);
+      return `{ ${parts.join(', ')} }`;
+    });
     dimsBlock=`,\n      "dims": [\n        ${dimObjs.join(',\n        ')}\n      ]`;
   }
   const indent='      ';
@@ -1126,7 +1192,7 @@ function showExportPanel(jsonText, id) {
       <button id="expClose" class="btn small ghost" style="font-size:12px">✕</button>
     </div>
     <div style="padding:14px 18px;font-size:12px;line-height:1.6;color:var(--muted,#8a9ab8)">
-      Copy into the <b>"shapes"</b> array in <code>bbs/shapes.json</code>, then run <code>node bbs/build-shapes.js</code>.
+      Copy into the <b>"shapes"</b> array in <code>bbs/shapes.json</code>, then reload the app.
     </div>
     <textarea id="expJson" readonly style="margin:0 18px;flex:1;min-height:200px;resize:vertical;
       font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;
@@ -1293,7 +1359,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot());
+        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot(), cmd.size);
       }, listening: false,
     }));
 
@@ -1301,7 +1367,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'');
+        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
       }, listening: false,
     }));
 
@@ -1309,7 +1375,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot());
+        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot(), cmd.size);
       }, listening: false,
     }));
 
@@ -1386,7 +1452,7 @@ function renderGhostFrame(cursorPt) {
       : -30;
     layer.add(new Konva.Shape({
       opacity: 0.6,
-      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot()); },
+      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot(), getFontSize()); },
       listening: false,
     }));
     // Anchor dots
@@ -1400,7 +1466,7 @@ function renderGhostFrame(cursorPt) {
     if (ptB) {
       layer.add(new Konva.Shape({
         opacity: 0.6,
-        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot()); },
+        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot(), getFontSize()); },
         listening: false,
       }));
     } else {
@@ -1416,7 +1482,7 @@ function renderGhostFrame(cursorPt) {
     const textPt = dimPhase === 2 ? cursorPt : null;
     layer.add(new Konva.Shape({
       opacity: 0.6,
-      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot()); },
+      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot(), getFontSize()); },
       listening: false,
     }));
     dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
@@ -1572,7 +1638,7 @@ function onDown(e) {
     dimPts.push(pt);
     if (dimPts.length === 3) {
       const [p1,p2,offPt] = dimPts;
-      history.push({type:'dim-aligned', p1, p2, offset: _alignedOffset(p1,p2,offPt), label:getAnnot()});
+      history.push({type:'dim-aligned', p1, p2, offset: _alignedOffset(p1,p2,offPt), label:getAnnot(), size:getFontSize()});
       dimPhase=0; dimPts=[]; redraw();
     } else {
       dimPhase = dimPts.length;
@@ -1585,7 +1651,7 @@ function onDown(e) {
     dimPts.push(pt);
     if (dimPts.length === 3) {
       const [vertex,ptA,ptB] = dimPts;
-      history.push({type:'dim-angular', vertex, ptA, ptB, label:getAnnot()});
+      history.push({type:'dim-angular', vertex, ptA, ptB, label:getAnnot(), size:getFontSize()});
       dimPhase=0; dimPts=[]; redraw();
     } else {
       dimPhase = dimPts.length;
@@ -1598,7 +1664,7 @@ function onDown(e) {
     dimPts.push(pt);
     if (dimPts.length === 3) {
       const [origin,elbow,textPt] = dimPts;
-      history.push({type:'dim-leader', origin, elbow, textPt, label:getAnnot()});
+      history.push({type:'dim-leader', origin, elbow, textPt, label:getAnnot(), size:getFontSize()});
       dimPhase=0; dimPts=[]; redraw();
     } else {
       dimPhase = dimPts.length;
@@ -1738,12 +1804,25 @@ function initDrawer() {
   // Disconnect any previous observer
   if (_stageResizeObserver) { _stageResizeObserver.disconnect(); _stageResizeObserver = null; }
 
+  function _syncSidebarHeight(canvasH) {
+    // Landscape canvas is shorter than the tool sidebar; cap the sidebar to the
+    // canvas-column height (canvas + actions bar) and let it scroll, so the flex
+    // row never stretches taller than the canvas and leaves a gap below it.
+    const sidebar = document.getElementById('drawerSidebar');
+    if (!sidebar) return;
+    const actions = document.getElementById('drawerActions');
+    const tbH = actions ? actions.offsetHeight : 46;
+    sidebar.style.maxHeight = (canvasH + tbH) + 'px';
+  }
+
   function _resizeStage() {
     const w = wrap.clientWidth;
-    const h = wrap.clientHeight;
-    if (!w || !h) return;
+    if (!w) return;
+    const h = Math.round(w * 3 / 4);
+    wrap.style.height = h + 'px';
     _stageW = w;
     _stageH = h;
+    _syncSidebarHeight(h);
     if (_konvaStage) {
       _konvaStage.width(w);
       _konvaStage.height(h);
@@ -1752,8 +1831,10 @@ function initDrawer() {
     }
   }
 
-  _stageW = wrap.clientWidth  || 700;
-  _stageH = wrap.clientHeight || 460;
+  _stageW = wrap.clientWidth  || 600;
+  _stageH = Math.round(_stageW * 3 / 4);
+  wrap.style.height = _stageH + 'px';
+  _syncSidebarHeight(_stageH);
 
   // Boot Konva stage into #konvaContainer
   const konvaEl = document.getElementById('konvaContainer');
@@ -1796,6 +1877,8 @@ function initDrawer() {
   });
   document.getElementById('drawerFontSize').addEventListener('input',e=>{
     document.getElementById('drawerFontVal').textContent=e.target.value;
+    // Live-preview the new size on a dimension that's currently being placed
+    if(dimPhase>=1) renderGhostFrame(mousePos);
   });
   document.getElementById('drawerUndo').onclick=()=>{
     if(isDrawing&&livePts.length>1){livePts.pop();renderGhostFrame(mousePos);return;}
@@ -1850,11 +1933,11 @@ window.SHAPE_LIB_LIST = window.SHAPE_LIB_LIST || [];
 
 async function loadShapeLibrary() {
   if(window.SHAPE_LIB_LIST.length)return;
-  let list=Array.isArray(window.SHAPE_LIB_DEFAULT)?window.SHAPE_LIB_DEFAULT.slice():[];
+  let list=[];
   try{
     const res=await fetch('bbs/shapes.json',{cache:'no-cache'});
     if(res.ok){const data=await res.json();const fl=(data.shapes||[]).filter(s=>s&&s.id);if(fl.length)list=fl;}
-  }catch(err){console.info('shapes.json not auto-fetched (using embedded default).');}
+  }catch(err){console.info('shapes.json not auto-fetched (using built-in fallback).');}
   if(!list.length)list=[{id:'straight',label:'Straight',group:'quick',segments:[{pts:[[0,0.5],[1,0.5]],style:'straight'}],dims:[{from:[0,0.5],to:[1,0.5],label:'A',off:[0,-24]}]}];
   window.SHAPE_LIB_LIST=list; window.SHAPE_LIB={};
   list.forEach(s=>{window.SHAPE_LIB[s.id]=s;});
@@ -1888,7 +1971,7 @@ function populateQuickShapes(){
   const host=document.getElementById('quickShapeList'); if(!host)return;
   const quick=window.SHAPE_LIB_LIST.filter(s=>(s.group||'quick')==='quick');
   if(!quick.length){host.innerHTML='<span style="font-size:10px;color:var(--muted)">No shapes</span>';return;}
-  host.innerHTML=quick.map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.bs8666?'BS 8666 shape '+s.bs8666:''}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label||s.id}</button>`).join('');
+  host.innerHTML=quick.map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.shapeCode?'Standard shape '+s.shapeCode:''}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label||s.id}</button>`).join('');
   host.querySelectorAll('.shape-prev-btn').forEach(b=>b.addEventListener('click',()=>{
     history=[{type:'shape',shape:b.dataset.shape,diam:getBarSize(),style:activeStyle}]; redraw();
   }));
@@ -1896,23 +1979,46 @@ function populateQuickShapes(){
   if(loadBtn)loadBtn.onclick=manualLoadShapesJson;
 }
 
-/* ── Export canvas as PNG (for "Use Shape") — grid excluded ── */
+/* ── Export canvas as PNG (for "Use Shape") — grid excluded ──
+   Crops tightly to the drawn geometry and renders at high pixelRatio so the
+   stored sketch is sharp and fills its frame (instead of a tiny shape inside a
+   big mostly-white canvas, which is what made the PDF sketch look low-quality). */
+// Render the cropped sketch so its longest side is ~this many px — a small
+// shape gets a high pixelRatio, a large one a smaller ratio, giving a
+// consistently crisp source without bloating storage for big drawings.
+const EXPORT_TARGET_PX = 1100;
 function exportToPNG() {
   if (!_konvaStage) return '';
-  // Temporarily hide the grid layer so it doesn't appear in the export
-  if (_gridLayer) _gridLayer.hide();
-  // Ensure white background is drawn for the export
   const layer = getKonvaLayer();
-  if (layer) {
-    const bg = new Konva.Rect({ x:0, y:0, width:_stageW, height:_stageH, fill:'#fff' });
-    layer.add(bg); bg.moveToBottom(); layer.draw();
-    const dataURL = _konvaStage.toDataURL({ mimeType:'image/png' });
-    bg.destroy(); layer.draw();
-    if (_gridLayer) _gridLayer.show();
-    drawGrid();
-    return dataURL;
+  if (!layer) return '';
+
+  // Hide grid so it isn't captured, and so getClientRect sees only the shape
+  if (_gridLayer) _gridLayer.hide();
+
+  // Tight content bounds (stage coords); pad a little so strokes aren't clipped
+  let crop = null;
+  const rect = layer.getClientRect({ skipShadow:false });
+  if (rect && rect.width > 1 && rect.height > 1) {
+    const pad = Math.max(12, Math.round(Math.max(rect.width, rect.height) * 0.06));
+    const x = Math.max(0, Math.floor(rect.x - pad));
+    const y = Math.max(0, Math.floor(rect.y - pad));
+    const w = Math.min(_stageW - x, Math.ceil(rect.width  + pad * 2));
+    const h = Math.min(_stageH - y, Math.ceil(rect.height + pad * 2));
+    if (w > 1 && h > 1) crop = { x, y, width: w, height: h };
   }
-  const dataURL = _konvaStage.toDataURL({ mimeType:'image/png' });
+
+  const maxSide = crop ? Math.max(crop.width, crop.height) : Math.max(_stageW, _stageH);
+  const pixelRatio = Math.min(8, Math.max(3, +(EXPORT_TARGET_PX / maxSide).toFixed(2)));
+
+  // White background behind the (possibly transparent) shape
+  const bg = new Konva.Rect({ x:0, y:0, width:_stageW, height:_stageH, fill:'#fff' });
+  layer.add(bg); bg.moveToBottom(); layer.draw();
+
+  const dataURL = _konvaStage.toDataURL(
+    Object.assign({ mimeType:'image/png', pixelRatio }, crop || {})
+  );
+
+  bg.destroy(); layer.draw();
   if (_gridLayer) _gridLayer.show();
   drawGrid();
   return dataURL;

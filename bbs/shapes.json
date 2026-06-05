@@ -5,508 +5,100 @@
       "Add an entry to the 'shapes' array below.",
       "Coordinates are NORMALISED 0..1 across the drawing canvas:",
       "  x = 0 is left edge, x = 1 is right edge.",
-      "  y = 0 is TOP edge, y = 1 is BOTTOM edge.",
-      "A built-in padding is applied so 0..1 maps to the usable area.",
+      "  y = 0 is TOP edge,  y = 1 is BOTTOM edge.",
+      "A built-in padding maps 0..1 to the usable area.",
       "",
       "Each shape has:",
       "  id        - unique key (used by quick buttons + saved sketches)",
       "  label     - text shown on the quick-shape button",
-      "  bs8666    - the BS 8666 shape code (string, optional, shown as caption)",
+      "  shapeCode - Standard shape code (optional caption)",
       "  formula   - cutting-length formula text (optional caption)",
       "  group     - 'quick' to show as a quick button, or any category name",
-      "  segments  - array of polyline segments to render. Each segment:",
-      "      pts    : [[x,y], [x,y], ...] normalised points",
-      "      style  : 'bend' (arc bends) | 'straight' (sharp) | 'curve' (spline)",
-      "      closed : true to close the loop back to the first point (optional)",
-      "  dims      - array of dimension lines: {from:[x,y], to:[x,y], label, off:[dx,dy]}",
+      "  segments  - array of polyline segments:",
+      "      pts    : [[x,y], ...] normalised points",
+      "      style  : 'bend' (arc) | 'straight' (sharp) | 'curve' (spline)",
+      "      closed : true to close the loop (optional)",
+      "  dims      - dimension lines: {from:[x,y], to:[x,y], label, off:[dx,dy]}",
       "",
-      "ISOMETRIC shapes: set iso:true and give points as [x,y,z] world units.",
-      "Auto-projected at 30deg and auto-centred. 'fit' sets world scale.",
-      "Iso dims must also set iso:true and use [x,y,z] from/to.",
+      "ISOMETRIC: set iso:true, give points as [x,y,z] world units, set fit.",
+      "PARAMETRIC: set generator:'circle' or 'spiral' (turns for spiral).",
       "",
-      "PARAMETRIC shapes: set generator:'circle' or 'spiral' (turns applies to spiral).",
+      "NOTE: this file is fetched at runtime; the app must be served over http",
+      "(not opened from disk via file://, which browsers block for fetch).",
       "",
-      "NOTE: bbs/shape-library.js holds an embedded copy so the app works from",
-      "disk (file://). When served over http THIS file overrides it.",
-      "",
-      "TIP: You can DRAW a shape in the drawer, then click 'Export to shapes.json'",
-      "to generate a ready-to-paste entry (auto-normalised to 0..1). Paste it into",
-      "the 'shapes' array below and run: node bbs/build-shapes.js"
+      "TIP: Draw a shape in the drawer, click 'Export to shapes.json', paste the",
+      "entry into the 'shapes' array here, then reload the app."
     ],
     "schema_version": 2
   },
   "shapes": [
     {
-      "id": "straight",
-      "label": "Straight (00)",
-      "bs8666": "00",
-      "formula": "L = A",
-      "group": "quick",
+      "id": "straight", "label": "Straight (00)", "shapeCode": "00", "formula": "L = A", "group": "quick",
       "segments": [
-        {
-          "pts": [
-            [
-              0.0,
-              0.5
-            ],
-            [
-              1.0,
-              0.5
-            ]
-          ],
-          "style": "straight"
-        }
+        { "pts": [[0,0.5],[1,0.5]], "style": "straight" }
       ],
       "dims": [
-        {
-          "from": [
-            0.0,
-            0.5
-          ],
-          "to": [
-            1.0,
-            0.5
-          ],
-          "label": "A",
-          "off": [
-            0,
-            -24
-          ]
-        }
+        { "from": [0,0.5], "to": [1,0.5], "label": "A", "off": [0,-24] }
       ]
     },
     {
-      "id": "straight-semi-hooks",
-      "label": "Semicircular hooks",
-      "bs8666": "00 + 180° hooks",
-      "formula": "L = A + 2(hook) - 2d",
-      "group": "quick",
+      "id": "straight-semi-hooks", "label": "Semicircular hooks", "shapeCode": "00 + 180° hooks", "formula": "L = A + 2(hook) - 2d", "group": "quick",
       "segments": [
-        {
-          "pts": [
-            [
-              0.06,
-              0.74
-            ],
-            [
-              0.06,
-              0.46
-            ],
-            [
-              0.075,
-              0.345
-            ],
-            [
-              0.13,
-              0.3
-            ],
-            [
-              0.185,
-              0.345
-            ],
-            [
-              0.2,
-              0.46
-            ],
-            [
-              0.2,
-              0.5
-            ],
-            [
-              0.8,
-              0.5
-            ],
-            [
-              0.8,
-              0.46
-            ],
-            [
-              0.815,
-              0.345
-            ],
-            [
-              0.87,
-              0.3
-            ],
-            [
-              0.925,
-              0.345
-            ],
-            [
-              0.94,
-              0.46
-            ],
-            [
-              0.94,
-              0.74
-            ]
-          ],
-          "style": "curve"
-        }
+        { "pts": [[0.06,0.74],[0.06,0.46],[0.075,0.345],[0.13,0.3],[0.185,0.345],[0.2,0.46],[0.2,0.5],[0.8,0.5],[0.8,0.46],[0.815,0.345],[0.87,0.3],[0.925,0.345],[0.94,0.46],[0.94,0.74]], "style": "curve" }
       ],
       "dims": [
-        {
-          "from": [
-            0.2,
-            0.5
-          ],
-          "to": [
-            0.8,
-            0.5
-          ],
-          "label": "A",
-          "off": [
-            0,
-            20
-          ]
-        }
+        { "from": [0.2,0.5], "to": [0.8,0.5], "label": "A", "off": [0,20] }
       ]
     },
     {
-      "id": "straight-L-hooks",
-      "label": "L hooks both ends",
-      "bs8666": "00 + 90° hooks",
-      "formula": "L = A + 2B - 2d",
-      "group": "quick",
+      "id": "straight-L-hooks", "label": "L hooks both ends", "shapeCode": "00 + 90° hooks", "formula": "L = A + 2B - 2d", "group": "quick",
       "segments": [
-        {
-          "pts": [
-            [
-              0.08,
-              0.78
-            ],
-            [
-              0.08,
-              0.42
-            ],
-            [
-              0.92,
-              0.42
-            ],
-            [
-              0.92,
-              0.78
-            ]
-          ],
-          "style": "bend"
-        }
+        { "pts": [[0.08,0.78],[0.08,0.42],[0.92,0.42],[0.92,0.78]], "style": "bend" }
       ],
       "dims": [
-        {
-          "from": [
-            0.08,
-            0.42
-          ],
-          "to": [
-            0.92,
-            0.42
-          ],
-          "label": "A",
-          "off": [
-            0,
-            -16
-          ]
-        },
-        {
-          "from": [
-            0.08,
-            0.42
-          ],
-          "to": [
-            0.08,
-            0.78
-          ],
-          "label": "B",
-          "off": [
-            -16,
-            0
-          ]
-        },
-        {
-          "from": [
-            0.92,
-            0.42
-          ],
-          "to": [
-            0.92,
-            0.78
-          ],
-          "label": "B",
-          "off": [
-            16,
-            0
-          ]
-        }
+        { "from": [0.08,0.42], "to": [0.92,0.42], "label": "A", "off": [0,-16] },
+        { "from": [0.08,0.42], "to": [0.08,0.78], "label": "B", "off": [-16,0] },
+        { "from": [0.92,0.42], "to": [0.92,0.78], "label": "B", "off": [16,0] }
       ]
     },
     {
-      "id": "stirrup-rect",
-      "label": "Rectangular stirrup",
-      "bs8666": "51",
-      "formula": "L = 2(A + B) + 2(hook) - bends",
-      "group": "quick",
+      "id": "stirrup-rect", "label": "Rectangular stirrup", "shapeCode": "51", "formula": "L = 2(A + B) + 2(hook) - bends", "group": "quick",
       "segments": [
-        {
-          "_note": "closed rectangle",
-          "pts": [
-            [
-              0.12,
-              0.16
-            ],
-            [
-              0.88,
-              0.16
-            ],
-            [
-              0.88,
-              0.86
-            ],
-            [
-              0.12,
-              0.86
-            ]
-          ],
-          "style": "bend",
-          "closed": true
-        },
-        {
-          "_note": "135 hook A (longer, from corner)",
-          "pts": [
-            [
-              0.86,
-              0.16
-            ],
-            [
-              0.68,
-              0.4
-            ]
-          ],
-          "style": "straight"
-        },
-        {
-          "_note": "135 hook B (parallel, offset)",
-          "pts": [
-            [
-              0.78,
-              0.16
-            ],
-            [
-              0.6,
-              0.4
-            ]
-          ],
-          "style": "straight"
-        }
+        { "pts": [[0.12,0.16],[0.88,0.16],[0.88,0.86],[0.12,0.86]], "style": "bend", "closed": true },
+        { "pts": [[0.86,0.16],[0.68,0.4]], "style": "straight" },
+        { "pts": [[0.78,0.16],[0.6,0.4]],  "style": "straight" }
       ],
       "dims": [
-        {
-          "from": [
-            0.12,
-            0.12
-          ],
-          "to": [
-            0.88,
-            0.12
-          ],
-          "label": "A",
-          "off": [
-            0,
-            -16
-          ]
-        },
-        {
-          "from": [
-            0.12,
-            0.12
-          ],
-          "to": [
-            0.12,
-            0.88
-          ],
-          "label": "B",
-          "off": [
-            -16,
-            0
-          ]
-        }
+        { "from": [0.12,0.12], "to": [0.88,0.12], "label": "A", "off": [0,-16] },
+        { "from": [0.12,0.12], "to": [0.12,0.88], "label": "B", "off": [-16,0] }
       ]
     },
     {
-      "id": "circle",
-      "label": "Circular tie",
-      "bs8666": "75",
-      "formula": "L = π(D − d) + 2(hook)",
-      "group": "quick",
+      "id": "circle", "label": "Circular tie", "shapeCode": "75", "formula": "L = π(D − d) + 2(hook)", "group": "quick",
       "generator": "circle",
       "dims": [
-        {
-          "from": [
-            0.5,
-            0.5
-          ],
-          "to": [
-            1.0,
-            0.5
-          ],
-          "label": "⌀"
-        }
+        { "from": [0.5,0.5], "to": [1,0.5], "label": "⌀" }
       ]
     },
     {
-      "id": "spiral",
-      "label": "Spiral tie (3D)",
-      "bs8666": "77",
-      "formula": "L = n·√((πD)² + p²)",
-      "group": "quick",
-      "generator": "spiral",
-      "turns": 4,
+      "id": "spiral", "label": "Spiral tie (3D)", "shapeCode": "77", "formula": "L = n·√((πD)² + p²)", "group": "quick",
+      "generator": "spiral", "turns": 4,
       "dims": [
-        {
-          "from": [
-            0.0,
-            0.5
-          ],
-          "to": [
-            1.0,
-            0.5
-          ],
-          "label": "⌀"
-        }
+        { "from": [0,0.5], "to": [1,0.5], "label": "⌀" }
       ]
     },
     {
-      "id": "chair",
-      "label": "Chair bar",
-      "bs8666": "98",
-      "formula": "L = A + 2B + 2C",
-      "group": "quick",
-      "iso": true,
-      "fit": 200,
+      "id": "chair", "label": "Chair bar", "shapeCode": "98", "formula": "L = A + 2B + 2C", "group": "quick",
+      "iso": true, "fit": 200,
       "segments": [
-        {
-          "_note": "top bar A",
-          "pts": [
-            [
-              0,
-              90,
-              0
-            ],
-            [
-              200,
-              90,
-              0
-            ]
-          ],
-          "style": "straight"
-        },
-        {
-          "_note": "left leg + foot toward viewer (+z) + small hook up",
-          "pts": [
-            [
-              0,
-              90,
-              0
-            ],
-            [
-              0,
-              0,
-              0
-            ],
-            [
-              0,
-              0,
-              64
-            ],
-            [
-              0,
-              28,
-              64
-            ]
-          ],
-          "style": "bend"
-        },
-        {
-          "_note": "right leg + foot AWAY from viewer (-z) + small hook up",
-          "pts": [
-            [
-              200,
-              90,
-              0
-            ],
-            [
-              200,
-              0,
-              0
-            ],
-            [
-              200,
-              0,
-              -64
-            ],
-            [
-              200,
-              28,
-              -64
-            ]
-          ],
-          "style": "bend"
-        }
+        { "pts": [[0,90,0],[200,90,0]], "style": "straight" },
+        { "pts": [[0,90,0],[0,0,0],[0,0,64],[0,28,64]], "style": "bend" },
+        { "pts": [[200,90,0],[200,0,0],[200,0,-64],[200,28,-64]], "style": "bend" }
       ],
       "dims": [
-        {
-          "iso": true,
-          "from": [
-            0,
-            90,
-            0
-          ],
-          "to": [
-            200,
-            90,
-            0
-          ],
-          "label": "A",
-          "off": [
-            0,
-            -16
-          ]
-        },
-        {
-          "iso": true,
-          "from": [
-            0,
-            90,
-            0
-          ],
-          "to": [
-            0,
-            0,
-            0
-          ],
-          "label": "B",
-          "off": [
-            -16,
-            0
-          ]
-        },
-        {
-          "iso": true,
-          "from": [
-            0,
-            0,
-            0
-          ],
-          "to": [
-            0,
-            0,
-            64
-          ],
-          "label": "C",
-          "off": [
-            0,
-            16
-          ]
-        }
+        { "iso": true, "from": [0,90,0],  "to": [200,90,0], "label": "A", "off": [0,-16] },
+        { "iso": true, "from": [0,90,0],  "to": [0,0,0],    "label": "B", "off": [-16,0] },
+        { "iso": true, "from": [0,0,0],   "to": [0,0,64],   "label": "C", "off": [0,16] }
       ]
     }
   ]
