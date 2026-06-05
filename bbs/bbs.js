@@ -194,7 +194,7 @@ function render(){
       <td class="mono right">${r.dia}</td>
       <td>${r.shapeLabel}</td>
       <td style="text-align:center;padding:4px 6px">${r.shapeImg
-        ? `<img src="${r.shapeImg}" alt="shape" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px">`
+        ? `<img src="${r.shapeImg}" alt="shape" class="sketch-thumb" data-enlarge="${i}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
         : '<span class="subtle">—</span>'}</td>
       <td class="mono right">${fmt0(r.clPerBarMm)}</td>
       <td class="mono right">${r.qty}</td>
@@ -212,6 +212,20 @@ function render(){
   });
   recalcSums();
 }
+
+/* =========================
+   Sketch enlarge lightbox
+   ========================= */
+function openSketchLightbox(r){
+  const dlg = $('#sketchDlg');
+  $('#sketchDlgImg').src = r.shapeImg;
+  const label = [r.member, r.mark, r.shapeLabel].filter(Boolean).join(' · ');
+  $('#sketchDlgTitle').textContent = label || 'Shape Sketch';
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open','');
+}
+$('#sketchDlgClose').addEventListener('click', ()=> $('#sketchDlg').close());
+// Click on the backdrop (outside the content) closes the lightbox
+$('#sketchDlg').addEventListener('click', e=>{ if(e.target.id==='sketchDlg') $('#sketchDlg').close(); });
 
 function computeQty(mode,{qty,spacing,span,offsetStart,offsetEnd}){
   if(mode==='manual') return qty>0?qty:0;
@@ -393,7 +407,8 @@ $('#barForm').addEventListener('submit', e=>{
    Edit & Delete
    ========================= */
 $('#bbsTable').addEventListener('click', e=>{
-  const del=e.target.dataset.del, edit=e.target.dataset.edit;
+  const del=e.target.dataset.del, edit=e.target.dataset.edit, enlarge=e.target.dataset.enlarge;
+  if(enlarge!==undefined){ const r=rows[Number(enlarge)]; if(r&&r.shapeImg) openSketchLightbox(r); return; }
   if(del!==undefined){ rows.splice(Number(del),1); persist(); render(); }
   else if(edit!==undefined){
     const i=Number(edit), r=rows[i]; if(!r) return;
@@ -617,9 +632,9 @@ $('#printBBS').addEventListener('click', async () => {
     const SKETCH_W  = 30;   // images: fixed natural width (mm)
     const MIN_W     = 7;    // floor so headers/numbers never collapse (mm)
     const FLEX_MIN  = 20;   // smallest a free-text column may shrink to (mm)
-    // Free-text columns absorb leftover/overflow width; the rest are pinned to
-    // their content so numbers and short headers never wrap or clip.
-    const FLEX = new Set(['member','shape','rem']);
+    // Only Remarks absorbs leftover/overflow width; every other column — #
+    // through Shape included — is pinned to its content so it never stretches.
+    const FLEX = new Set(['rem']);
 
     pdf.setFontSize(fontSize);
     // Header measured by its longest word so multi-word titles can wrap across

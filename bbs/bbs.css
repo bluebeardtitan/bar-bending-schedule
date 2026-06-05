@@ -311,6 +311,20 @@ tfoot td{border-top:2px solid var(--border);font-weight:700}
 dialog{border:none}
 dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
 
+/* Sketch enlarge lightbox */
+#sketchDlg{
+  padding:0;border-radius:14px;background:var(--panel);color:var(--text);
+  max-width:92vw;max-height:92vh;box-shadow:0 28px 70px rgba(0,0,0,.5);overflow:hidden;
+}
+#sketchDlgHead{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+}
+#sketchDlgTitle{font-weight:600;font-size:14px;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sketchDlgBody{padding:16px;display:flex;align-items:center;justify-content:center;background:#fff}
+#sketchDlgImg{max-width:84vw;max-height:78vh;width:auto;height:auto;object-fit:contain;display:block}
+
 /* =========================================
    Print
    ========================================= */
