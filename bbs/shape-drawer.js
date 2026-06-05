@@ -897,16 +897,16 @@ const drawerHTML = `
     <div id="drawerSidebar" style="width:192px;flex-shrink:0;border-right:1px solid var(--border);padding:11px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;font-size:12px;max-height:calc(96vh - 56px)">
 
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Tool</div>
-      <div style="display:flex;flex-direction:column;gap:3px" id="toolBtns">
-        <button class="btn small ghost drawer-tool" data-tool="rebar-path"  title="Click to add points · B=toggle Bézier · Dbl-click or Enter to finish · Esc to cancel">〽 Rebar Path</button>
-        <button class="btn small ghost drawer-tool" data-tool="ortho-bar"   title="Ortho mode: clicks snap H/V · Dbl-click or Enter to finish · Esc to cancel">⊢ Ortho Bar</button>
-        <button class="btn small ghost drawer-tool" data-tool="rect"        title="Click-drag to draw rectangle">▭ Rectangle</button>
-        <button class="btn small ghost drawer-tool" data-tool="circle"      title="Click-drag to draw ellipse">◯ Circle / Stirrup</button>
-        <button class="btn small ghost drawer-tool" data-tool="text"        title="Click canvas to place label">T Annotation</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-aligned" title="Aligned dimension: click two points, then click to set offset · measures true distance · press O to snap 2nd point H/V (ortho)">↔ Dim: Aligned</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-angular" title="Angular dimension: click vertex, then two arm points · measures angle between them">∠ Dim: Angular</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-leader"  title="Leader: click origin, then elbow, then text anchor · places an annotation leader line">↗ Dim: Leader</button>
-        <button class="btn small ghost drawer-tool" data-tool="edit-points" title="Drag existing anchor points to reposition them · Click elsewhere to deselect">✦ Edit Points</button>
+      <div style="display:flex;flex-wrap:wrap;gap:3px" id="toolBtns">
+        <button class="btn small ghost drawer-tool" data-tool="rebar-path"  title="Rebar Path — Click to add points · B=toggle Bézier · Dbl-click or Enter to finish · Esc to cancel"  style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">〽</button>
+        <button class="btn small ghost drawer-tool" data-tool="ortho-bar"   title="Ortho Bar — Ortho mode: clicks snap H/V · Dbl-click or Enter to finish · Esc to cancel"             style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">⊢</button>
+        <button class="btn small ghost drawer-tool" data-tool="rect"        title="Rectangle — Click-drag to draw rectangle"                                                             style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">▭</button>
+        <button class="btn small ghost drawer-tool" data-tool="circle"      title="Circle / Stirrup — Click-drag to draw ellipse"                                                       style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">◯</button>
+        <button class="btn small ghost drawer-tool" data-tool="text"        title="Annotation — Click canvas to place label"                                                             style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">T</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-aligned" title="Dim: Aligned — Click two points, then click to set offset · measures true distance · O=snap H/V"    style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">↔</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-angular" title="Dim: Angular — Click vertex, then two arm points · measures angle between them"                      style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">∠</button>
+        <button class="btn small ghost drawer-tool" data-tool="dim-leader"  title="Dim: Leader — Click origin, then elbow, then text anchor · places an annotation leader line"         style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">↗</button>
+        <button class="btn small ghost drawer-tool" data-tool="edit-points" title="Edit Points — Drag existing anchor points to reposition them · Click elsewhere to deselect"          style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">✦</button>
       </div>
 
       <!-- Path-tool hint -->
@@ -919,8 +919,8 @@ const drawerHTML = `
 
       <div style="height:1px;background:var(--border)"></div>
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Rebar Style</div>
-      <div style="display:flex;flex-direction:column;gap:3px">
-        ${REBAR_STYLES.map(s=>`<button class="btn small ghost rebar-style-btn" data-style="${s.id}" style="text-align:left;font-size:11px">${s.label}</button>`).join('')}
+      <div style="display:flex;flex-wrap:wrap;gap:3px">
+        ${REBAR_STYLES.map(s=>{const [icon,...rest]=s.label.split(' ');return `<button class="btn small ghost rebar-style-btn" data-style="${s.id}" title="${rest.join(' ')}" style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">${icon}</button>`;}).join('')}
       </div>
 
       <div style="height:1px;background:var(--border)"></div>
@@ -1969,7 +1969,7 @@ function manualLoadShapesJson(){
     reader.onload=()=>{
       try{
         const data=JSON.parse(reader.result);
-        const list=Array.isArray(data)?data:(data.shapes||[]);
+        const list=Array.isArray(data)?data:Array.isArray(data.shapes)?data.shapes:(data.id?[data]:[]);
         if(applyShapeList(list,file.name)){const btn=document.getElementById('loadShapesBtn');if(btn){const t=btn.textContent;btn.textContent='✓ Loaded';setTimeout(()=>(btn.textContent=t),1500);}}
       }catch(err){alert('Could not parse JSON: '+err.message);}
     };
