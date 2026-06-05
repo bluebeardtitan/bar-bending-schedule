@@ -46,7 +46,7 @@
       "formula": "A+14d",
       "group": "quick",
       "segments": [ { "pts": [[0.125,0.468],[0.08,0.468],[0.08,0.532],[0.92,0.532],[0.92,0.475],[0.881,0.475]], "style": "bend" } ]
-    }
+    },
     {
       "id": "straight-L-hooks", "label": "L hooks both ends", "shapeCode": "00 + 90° hooks", "formula": "L = A + 2B - 2d", "group": "quick",
       "segments": [
