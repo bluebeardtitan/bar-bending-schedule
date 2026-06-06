@@ -1847,11 +1847,25 @@ function initDrawer() {
     sidebar.style.maxHeight = (canvasH + tbH) + 'px';
   }
 
-  function _resizeStage() {
+  // Stage size: desktop is a 4:3 box (height derived from width). On mobile the
+  // white wrap is given a viewport-based height by CSS, and the stage is sized
+  // to the wrap's *measured* height — so the drawable area always exactly fills
+  // the visible white, with nothing undrawable at the bottom.
+  function _stageSize() {
+    const mobile = window.matchMedia && window.matchMedia('(max-width:760px)').matches;
     const w = wrap.clientWidth;
-    if (!w) return;
+    if (mobile) {
+      wrap.style.height = '';                 // hand height control to CSS (dvh)
+      return { w, h: wrap.clientHeight || Math.round(w * 3 / 4) };
+    }
     const h = Math.round(w * 3 / 4);
     wrap.style.height = h + 'px';
+    return { w, h };
+  }
+
+  function _resizeStage() {
+    const { w, h } = _stageSize();
+    if (!w || !h) return;
     _stageW = w;
     _stageH = h;
     _syncSidebarHeight(h);
@@ -1863,9 +1877,9 @@ function initDrawer() {
     }
   }
 
-  _stageW = wrap.clientWidth  || 600;
-  _stageH = Math.round(_stageW * 3 / 4);
-  wrap.style.height = _stageH + 'px';
+  const _init = _stageSize();
+  _stageW = _init.w || 600;
+  _stageH = _init.h || Math.round(_stageW * 3 / 4);
   _syncSidebarHeight(_stageH);
 
   // Boot Konva stage into #konvaContainer
@@ -1961,8 +1975,13 @@ const drawerResponsiveCSS = `
 @media (max-width: 760px) {
   #shapeDrawerDlg { width:100vw !important; max-width:100vw !important; max-height:100dvh !important; border-radius:0 !important; }
   #shapeDrawerDlg > div { max-height:100dvh !important; }
-  #drawerRow { flex-direction:column !important; overflow:auto !important; flex:1 1 auto; min-height:0; }
+  /* Hug content (don't grow) so there's no blank gap below the canvas;
+     shrink + scroll only when the stacked content is taller than the screen. */
+  #drawerRow { flex-direction:column !important; overflow:auto !important; flex:0 1 auto; min-height:0; }
   #drawerCanvasCol { order:-1; flex:0 0 auto !important; }
+  /* White drawable area gets a definite viewport height; the Konva stage is
+     sized to match it (see _stageSize), so you can draw to the very bottom. */
+  #svgCanvasWrap { height:62dvh !important; }
   #drawerSidebar {
     width:100% !important; max-height:none !important;
     border-right:none !important; border-top:1px solid var(--border);
