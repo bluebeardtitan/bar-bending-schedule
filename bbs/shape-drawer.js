@@ -1058,8 +1058,12 @@ function getXY(e) {
    EXPORT — same logic, reads from history
    ===================================================== */
 function buildShapeDefinition(meta) {
-  const rawSegments = [], rawDims = [];
+  const rawSegments = [], rawDims = [], rawTexts = [];
   for (const cmd of history) {
+    if (cmd.type === 'text') {
+      rawTexts.push({ x:cmd.x, y:cmd.y, text:cmd.text||'', size:cmd.size });
+      continue;
+    }
     if (cmd.type === 'rebar-path') {
       rawSegments.push({ pts: cmd.points.map(p=>({x:p.x,y:p.y})), style: cmd.bezier?'curve':'straight', closed:!!cmd.closed });
     } else if (cmd.type === 'ortho-bar') {
@@ -1088,6 +1092,7 @@ function buildShapeDefinition(meta) {
   const consider=(x,y)=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;};
   rawSegments.forEach(s=>s.pts.forEach(p=>consider(p.x,p.y)));
   rawDims.forEach(d=>d.pts.forEach(p=>consider(p.x,p.y)));
+  rawTexts.forEach(t=>consider(t.x,t.y));
   const bw=maxX-minX||1, bh=maxY-minY||1;
   /* Uniform scale preserves the drawn aspect ratio; independent x/y scaling
      here is what distorts the shape into filling the whole canvas on reload.
@@ -1119,11 +1124,18 @@ function buildShapeDefinition(meta) {
     }
     return {from:np(d.pts[0]), to:np(d.pts[1]), perp:frac(d.offset), label:d.label||'A', size:frac(d.size)};
   });
+  // Free-standing text annotations: normalise anchor + font size like dims.
+  const texts=rawTexts.map(t=>{
+    const o={x:nx(t.x), y:ny(t.y), label:t.text||''};
+    if(t.size!=null) o.size=frac(t.size);
+    return o;
+  });
   const def={id:meta.id,label:meta.label||meta.id,group:'quick'};
   if(meta.shapeCode)def.shapeCode=meta.shapeCode;
   if(meta.formula)def.formula=meta.formula;
   def.segments=segments;
   if(dims.length)def.dims=dims;
+  if(texts.length)def.texts=texts;
   return {def};
 }
 
@@ -1176,8 +1188,17 @@ function formatCompactShape(def) {
     });
     dimsBlock=`,\n      "dims": [\n        ${dimObjs.join(',\n        ')}\n      ]`;
   }
+  let textsBlock='';
+  if(def.texts&&def.texts.length){
+    const textObjs=def.texts.map(t=>{
+      const parts=[`"x": ${t.x}, "y": ${t.y}`, `"label": ${q(t.label)}`];
+      if(t.size!=null) parts.push(`"size": ${t.size}`);
+      return `{ ${parts.join(', ')} }`;
+    });
+    textsBlock=`,\n      "texts": [\n        ${textObjs.join(',\n        ')}\n      ]`;
+  }
   const indent='      ';
-  const fields=scalars.map(s=>indent+s).join(',\n')+',\n'+indent+segBlock+dimsBlock;
+  const fields=scalars.map(s=>indent+s).join(',\n')+',\n'+indent+segBlock+dimsBlock+textsBlock;
   return `{\n${fields}\n    }`;
 }
 
@@ -1998,6 +2019,7 @@ function shapeDefToCommands(def, diam, style){
   def.segments.forEach(s=>(s.pts||[]).forEach(p=>consider(p[0],p[1])));
   (def.dims||[]).forEach(dm=>[dm.from,dm.to,dm.vertex,dm.a,dm.b,dm.origin,dm.elbow,dm.text]
     .forEach(p=>{ if(p) consider(p[0],p[1]); }));
+  (def.texts||[]).forEach(t=>{ if(t.x!=null) consider(t.x,t.y); });
   if(!isFinite(nMinX)) return null;
 
   const pad=44, cx=_stageW/2, cy=_stageH/2;
@@ -2032,6 +2054,11 @@ function shapeDefToCommands(def, diam, style){
       }
       cmds.push({ type:'dim-aligned', p1:a, p2:b, offset, label:dm.label||'', size:sizePx });
     }
+  });
+  (def.texts||[]).forEach(t=>{
+    if(t.x==null) return;
+    const p=mapPt([t.x,t.y]);
+    cmds.push({ type:'text', x:p.x, y:p.y, text:t.label||'', size: t.size!=null ? t.size*scale : getFontSize() });
   });
   return cmds;
 }
