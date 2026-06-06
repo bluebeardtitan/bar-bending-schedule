@@ -591,6 +591,10 @@ $('#printBBS').addEventListener('click', async () => {
     const sketchMaxH   = 16;   // max sketch height per row (mm)
 
     // ── Column layout — widths fit to actual content, then normalised to fill usableW ──
+    // Add `pct:` (percent of the usable page width) to lock a column to a fixed
+    // width; columns without `pct` keep auto-sizing and share whatever's left.
+    // The pct values you set don't have to add up to 100 — leave headroom for
+    // the auto-sized columns. e.g. { key:'rem', title:'Remarks', align:'left', pct:18 }
     const cols = [
       { key:'idx',    title:'#',             align:'right'  },
       { key:'member', title:'Member',        align:'left'   },
@@ -653,12 +657,17 @@ $('#printBBS').addEventListener('click', async () => {
       c.nat = Math.max(MIN_W, natural + 2*pad);
     });
 
-    // Pin fixed columns to content; share the remaining width among flex columns.
-    const fixedSum   = cols.filter(c=>!FLEX.has(c.key)).reduce((a,c)=>a+c.nat,0);
-    const flexCols   = cols.filter(c=> FLEX.has(c.key));
+    // Columns with an explicit `pct` lock to that share of usableW. The rest:
+    // pin fixed columns to content, then share the remaining width among the
+    // auto-sized flex columns proportionally to their content.
+    cols.forEach(c => { if (c.pct != null) c.w = usableW * c.pct / 100; });
+    const pinned     = cols.filter(c => c.pct == null && !FLEX.has(c.key));
+    const flexCols   = cols.filter(c => c.pct == null &&  FLEX.has(c.key));
+    const lockedSum  = cols.filter(c => c.pct != null).reduce((a,c)=>a+c.w,0);
+    const fixedSum   = pinned.reduce((a,c)=>a+c.nat,0);
     const flexNatSum = flexCols.reduce((a,c)=>a+c.nat,0) || 1;
-    const avail      = usableW - fixedSum;
-    cols.forEach(c => { if (!FLEX.has(c.key)) c.w = c.nat; });
+    const avail      = usableW - lockedSum - fixedSum;
+    pinned.forEach(c => { c.w = c.nat; });
     flexCols.forEach(c => { c.w = Math.max(FLEX_MIN, avail * (c.nat/flexNatSum)); });
 
     // Normalise to fill usableW exactly (corrects FLEX_MIN clamping / rounding).
