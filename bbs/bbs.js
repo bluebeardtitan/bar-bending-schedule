@@ -596,18 +596,18 @@ $('#printBBS').addEventListener('click', async () => {
     // The pct values you set don't have to add up to 100 — leave headroom for
     // the auto-sized columns. e.g. { key:'rem', title:'Remarks', align:'left', pct:18 }
     const cols = [
-      { key:'idx',    title:'#',             align:'right',	pct:8  },
-      { key:'member', title:'Member',        align:'left' ,	pct:20  },
-      { key:'mark',   title:'Mark',          align:'left',	pct:8   },
-      { key:'dia',    title:'Dia',           align:'right',	pct:8  },
-      { key:'shape',  title:'Shape',         align:'left',	pct:10   },
+      { key:'idx',    title:'#',             align:'right' },
+      { key:'member', title:'Member',        align:'left' },
+      { key:'mark',   title:'Mark',          align:'left' },
+      { key:'dia',    title:'Dia',           align:'right' },
+      { key:'shape',  title:'Shape',         align:'left' },
       { key:'sketch', title:'Sketch',        align:'center' },
-      { key:'cl',     title:'CL/Bar (mm)',   align:'right'  },
-      { key:'qty',    title:'Qty',           align:'right'  },
-      { key:'totL',   title:'Total L (m)',   align:'right'  },
-      { key:'wtm',    title:'Wt/m (kg)',     align:'right'  },
-      { key:'totW',   title:'Total Wt (kg)', align:'right'  },
-      { key:'rem',    title:'Remarks',       align:'left', pct:20   },
+      { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:15  },
+      { key:'qty',    title:'Qty',           align:'right', pct:15  },
+      { key:'totL',   title:'Total L (m)',   align:'right', pct:15 },
+      { key:'wtm',    title:'Wt/m (kg)',     align:'right', pct:15 },
+      { key:'totW',   title:'Total Wt (kg)', align:'right', pct:15 },
+      { key:'rem',    title:'Remarks',       align:'left', pct:15   },
     ];
 
     // sanitize for measurement consistency with how values are drawn later
