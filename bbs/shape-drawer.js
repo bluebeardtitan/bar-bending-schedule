@@ -891,7 +891,7 @@ const drawerHTML = `
     <button id="drawerDone"   class="btn small primary">✔ Use Shape</button>
     <button id="drawerCancel" class="btn small ghost">✕</button>
   </div>
-  <div style="display:flex;overflow:hidden">
+  <div id="drawerRow" style="display:flex;overflow:hidden">
 
     <!-- ── LEFT SIDEBAR ── -->
     <div id="drawerSidebar" style="width:192px;flex-shrink:0;border-right:1px solid var(--border);padding:11px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;font-size:12px;max-height:calc(96vh - 56px)">
@@ -970,7 +970,7 @@ const drawerHTML = `
     </div>
 
     <!-- ── CANVAS AREA ── -->
-    <div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
+    <div id="drawerCanvasCol" style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
       <div id="svgCanvasWrap" style="position:relative;overflow:hidden;background:#fff;width:100%">
         <!-- Konva mounts here; id used by initKonvaStage -->
         <div id="konvaContainer" style="width:100%;height:100%"></div>
@@ -1954,7 +1954,38 @@ function initDrawer() {
   setTool('rebar-path'); setStyle('tor');
 }
 
+/* Responsive layout for phones/tablets: stack the toolbar under a full-width
+   canvas (instead of a 192px side rail that squeezes the canvas to a sliver),
+   and let the body scroll. Injected once; overrides the desktop inline styles. */
+const drawerResponsiveCSS = `
+@media (max-width: 760px) {
+  #shapeDrawerDlg { width:100vw !important; max-width:100vw !important; max-height:100dvh !important; border-radius:0 !important; }
+  #shapeDrawerDlg > div { max-height:100dvh !important; }
+  #drawerRow { flex-direction:column !important; overflow:auto !important; flex:1 1 auto; min-height:0; }
+  #drawerCanvasCol { order:-1; flex:0 0 auto !important; }
+  #drawerSidebar {
+    width:100% !important; max-height:none !important;
+    border-right:none !important; border-top:1px solid var(--border);
+    flex-direction:row !important; flex-wrap:wrap; align-items:flex-start;
+    row-gap:10px; column-gap:14px;
+  }
+  /* Each labelled control group becomes a wrap-friendly block, not a full column */
+  #drawerSidebar > div[style*="text-transform:uppercase"] { width:100%; }
+  #drawerSidebar > div[style*="height:1px"] { display:none; }
+  /* Bigger touch targets for tools / style / preset buttons */
+  #drawerSidebar .drawer-tool, #drawerSidebar .rebar-style-btn { width:44px !important; height:44px !important; font-size:18px !important; }
+  #drawerSidebar .annot-preset { padding:6px 10px !important; font-size:12px !important; }
+  #drawerAnnotText { flex:1 1 160px; }
+  #quickShapeList { width:100%; }
+}`;
+
 function ensureDrawerModal() {
+  if(!document.getElementById('shapeDrawerStyle')) {
+    const st = document.createElement('style');
+    st.id = 'shapeDrawerStyle';
+    st.textContent = drawerResponsiveCSS;
+    document.head.appendChild(st);
+  }
   if(!document.getElementById('shapeDrawerDlg'))
     document.body.insertAdjacentHTML('beforeend',drawerHTML);
 }
@@ -2168,6 +2199,151 @@ function exportToPNG() {
   return dataURL;
 }
 
+/* ── Export drawing as a compact VECTOR model (for "Use Shape") ──
+   Walks `history` and emits geometry primitives consumed by ShapeVector
+   (SVG on screen, native vector in the PDF). Produces a clean centreline
+   rendering — the bar as a stroked polyline/curve plus dims & text — rather
+   than the ribbed raster look, keeping files tiny. Returns null when the
+   drawing can only be produced as a baked raster diagram (generator/iso
+   library shapes), so the caller can fall back to exportToPNG(). */
+const DIM_GRAY = '#555';
+
+function _barLW(diam) { return Math.max(2, Math.min(6, (diam || 16) * 0.18)); }
+
+function _arrowPoly(px, py, ax, ay, flip, size) {
+  const s = (size || DIM_BASE) / DIM_BASE;
+  const aw = 9 * s, ah = 3.5 * s;
+  return { k:'fill', col:DIM_GRAY, d:[
+    [px, py],
+    [px - ax*aw*flip + ay*ah*flip, py - ay*aw*flip - ax*ah*flip],
+    [px - ax*aw*flip - ay*ah*flip, py - ay*aw*flip + ax*ah*flip],
+  ]};
+}
+
+/* Rotated white label box + centred text, mirroring _dimLabel() */
+function _labelEls(mx, my, label, angle, size) {
+  const fs = size || DIM_BASE;
+  const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+  const rot = (a > Math.PI/2 && a < Math.PI*1.5) ? angle + Math.PI : angle;
+  const tw = label.length * fs * 0.6 + fs * 0.7;
+  const bh = fs * 0.82;
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const corner = (lx, ly) => [mx + lx*c - ly*s, my + lx*s + ly*c];
+  return [
+    { k:'fill', col:'#fff', d:[corner(-tw/2,-bh), corner(tw/2,-bh), corner(tw/2,bh), corner(-tw/2,bh)] },
+    { k:'text', x:mx, y:my, t:label, sz:fs, ang:rot, col:DIM_GRAY, anchor:'c' },
+  ];
+}
+
+function _dotPoly(cx, cy, r) {
+  const d = [];
+  for (let i = 0; i < 10; i++) { const a = i/10*Math.PI*2; d.push([cx+Math.cos(a)*r, cy+Math.sin(a)*r]); }
+  return { k:'fill', col:DIM_GRAY, d };
+}
+
+function _emitAligned(out, p1, p2, offset, label, size) {
+  const dx = p2.x-p1.x, dy = p2.y-p1.y, len = Math.hypot(dx, dy);
+  if (len < 4) return;
+  const ax = dx/len, ay = dy/len, nx = -ay, ny = ax;
+  const off = offset != null ? offset : 30;
+  const d1 = { x:p1.x+nx*off, y:p1.y+ny*off }, d2 = { x:p2.x+nx*off, y:p2.y+ny*off };
+  const ext = 6, base = off > 0 ? 3 : off - ext;
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[p1.x+nx*base, p1.y+ny*base], b:[d1.x+nx*ext, d1.y+ny*ext] });
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[p2.x+nx*base, p2.y+ny*base], b:[d2.x+nx*ext, d2.y+ny*ext] });
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[d1.x, d1.y], b:[d2.x, d2.y] });
+  out.push(_arrowPoly(d1.x, d1.y, ax, ay, -1, size));
+  out.push(_arrowPoly(d2.x, d2.y, ax, ay,  1, size));
+  if (label) _labelEls((d1.x+d2.x)/2, (d1.y+d2.y)/2 - ny*8, label, Math.atan2(dy, dx), size).forEach(e => out.push(e));
+}
+
+function _emitAngular(out, vertex, ptA, ptB, label, size) {
+  const rA = Math.hypot(ptA.x-vertex.x, ptA.y-vertex.y);
+  const rB = Math.hypot(ptB.x-vertex.x, ptB.y-vertex.y);
+  const r = Math.min(rA, rB, 60) * 0.72 + 20;
+  const aA = Math.atan2(ptA.y-vertex.y, ptA.x-vertex.x);
+  const aB = Math.atan2(ptB.y-vertex.y, ptB.x-vertex.x);
+  let sweep = aB - aA;
+  while (sweep >  Math.PI) sweep -= Math.PI*2;
+  while (sweep < -Math.PI) sweep += Math.PI*2;
+  const aEnd = aA + sweep;
+  const lbl = label || (Math.abs(sweep*180/Math.PI).toFixed(1) + '°');
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, dash:true, a:[vertex.x, vertex.y], b:[vertex.x+Math.cos(aA)*r*1.25, vertex.y+Math.sin(aA)*r*1.25] });
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, dash:true, a:[vertex.x, vertex.y], b:[vertex.x+Math.cos(aEnd)*r*1.25, vertex.y+Math.sin(aEnd)*r*1.25] });
+  const steps = Math.max(8, Math.ceil(Math.abs(sweep)/0.18)), arc = [];
+  for (let i = 0; i <= steps; i++) { const a = aA + sweep*(i/steps); arc.push([vertex.x+Math.cos(a)*r, vertex.y+Math.sin(a)*r]); }
+  out.push({ k:'path', col:DIM_GRAY, lw:1.2, d:arc });
+  const arrowAng = aEnd + (sweep > 0 ? Math.PI/2 : -Math.PI/2);
+  out.push(_arrowPoly(vertex.x+Math.cos(aEnd)*r, vertex.y+Math.sin(aEnd)*r, Math.cos(arrowAng), Math.sin(arrowAng), 1, size));
+  const aMid = aA + sweep/2;
+  _labelEls(vertex.x+Math.cos(aMid)*(r+18), vertex.y+Math.sin(aMid)*(r+18), lbl, aMid+Math.PI/2, size).forEach(e => out.push(e));
+  out.push(_dotPoly(vertex.x, vertex.y, 3));
+}
+
+function _emitLeader(out, origin, elbow, textPt, label, size) {
+  const lbl = label || 'Label', fs = size || DIM_BASE, bh = fs*0.82;
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[origin.x, origin.y], b:[elbow.x, elbow.y] });
+  if (textPt) out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[elbow.x, elbow.y], b:[textPt.x, textPt.y] });
+  const dx = elbow.x-origin.x, dy = elbow.y-origin.y, len = Math.hypot(dx, dy);
+  if (len > 4) out.push(_arrowPoly(origin.x, origin.y, dx/len, dy/len, -1, size));
+  const tx = textPt ? textPt.x : elbow.x+20, ty = textPt ? textPt.y : elbow.y;
+  const tw = lbl.length*fs*0.6 + fs*0.7;
+  out.push({ k:'fill', col:'#fff', d:[[tx+2,ty-bh],[tx+2+tw,ty-bh],[tx+2+tw,ty+bh],[tx+2,ty+bh]] });
+  out.push({ k:'text', x:tx+6, y:ty, t:lbl, sz:fs, col:DIM_GRAY, anchor:'l' });
+  out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[tx+2, ty+bh], b:[tx+2+tw, ty+bh] });
+}
+
+function buildVectorModel() {
+  if (!history.length) return null;
+  if (history.some(c => c.type === 'shape')) return null;  // baked diagram → use raster
+  const bounds = computeHistoryBounds();
+  if (!bounds) return null;
+  const { minX, minY, maxX, maxY } = bounds;
+  const bw = maxX-minX, bh = maxY-minY;
+  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
+  const vb = [minX-p, minY-p, bw+p*2, bh+p*2];
+
+  const el = [];
+  for (const cmd of history) {
+    const d = cmd.diam || 16, lw = _barLW(d);
+    if (cmd.type === 'rebar-path') {
+      const pts = cmd.points || [];
+      if (pts.length < 2) continue;
+      if (cmd.bezier) {
+        const n = pts.length, T = 0.2;
+        const ext = cmd.closed ? [...pts, pts[0], pts[1]] : [pts[0], ...pts, pts[n-1]];
+        const segCount = cmd.closed ? n : n-1;
+        const s = [];
+        for (let i = 0; i < segCount; i++) {
+          const P0=ext[i], P1=ext[i+1], P2=ext[i+2], P3=ext[i+3]||ext[i+2];
+          s.push([P1.x+T*(P2.x-P0.x), P1.y+T*(P2.y-P0.y), P2.x-T*(P3.x-P1.x), P2.y-T*(P3.y-P1.y), P2.x, P2.y]);
+        }
+        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#1f1f1f', lw });
+      } else {
+        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+      }
+    } else if (cmd.type === 'ortho-bar') {
+      const pts = cmd.points || [];
+      if (pts.length < 2) continue;
+      el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+    } else if (cmd.type === 'rect') {
+      const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
+      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#1f1f1f', lw });
+    } else if (cmd.type === 'circle') {
+      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
+    } else if (cmd.type === 'text') {
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz:cmd.size||13, col:DIM_GRAY, anchor:'l' });
+    } else if (cmd.type === 'dim-aligned') {
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size);
+    } else if (cmd.type === 'dim-angular') {
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+    } else if (cmd.type === 'dim-leader') {
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size);
+    }
+  }
+  if (!el.length) return null;
+  return { vb, el };
+}
+
 window.ShapeDrawer = {
   async open(callback) {
     ensureDrawerModal();
@@ -2178,9 +2354,12 @@ window.ShapeDrawer = {
     setTimeout(()=>{initDrawer();populateQuickShapes();},60);
     document.getElementById('drawerDone').onclick=()=>{
       if(isDrawing)commitRebarPath();
+      // Prefer a compact vector model; fall back to raster for baked diagrams.
+      const vec = buildVectorModel();
+      const result = vec ? { vec } : { img: exportToPNG() };
       dlg.close();
       if(_stageResizeObserver){_stageResizeObserver.disconnect();_stageResizeObserver=null;}
-      if(drawerCallback)drawerCallback(exportToPNG());
+      if(drawerCallback)drawerCallback(result);
       document.removeEventListener('keydown',onKeyDown);
     };
     document.getElementById('drawerCancel').onclick=()=>{

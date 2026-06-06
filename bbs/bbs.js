@@ -183,9 +183,16 @@ function recalcSums(){
   $('#sumWt').textContent  = fmt3(sumWt);
   $('#countBadge').textContent = `${rows.length} item${rows.length!==1?'s':''}`;
 }
+/* Thumbnail/preview source for a row's shape — vector (SVG) preferred, raster fallback. */
+function shapeSrc(r){
+  if(r && r.shapeVec && window.ShapeVector) return ShapeVector.toDataURL(r.shapeVec);
+  return (r && r.shapeImg) || '';
+}
+
 function render(){
   const tbody = $('#tbody'); tbody.innerHTML='';
   rows.forEach((r,i)=>{
+    const src = shapeSrc(r);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="mono">${i+1}</td>
@@ -193,8 +200,8 @@ function render(){
       <td class="mono">${r.mark||''}</td>
       <td class="mono right">${r.dia}</td>
       <td>${r.shapeLabel}</td>
-      <td style="text-align:center;padding:4px 6px">${r.shapeImg
-        ? `<img src="${r.shapeImg}" alt="shape" class="sketch-thumb" data-enlarge="${i}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
+      <td style="text-align:center;padding:4px 6px">${src
+        ? `<img src="${src}" alt="shape" class="sketch-thumb" data-enlarge="${i}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
         : '<span class="subtle">—</span>'}</td>
       <td class="mono right">${fmt0(r.clPerBarMm)}</td>
       <td class="mono right">${r.qty}</td>
@@ -218,7 +225,7 @@ function render(){
    ========================= */
 function openSketchLightbox(r){
   const dlg = $('#sketchDlg');
-  $('#sketchDlgImg').src = r.shapeImg;
+  $('#sketchDlgImg').src = shapeSrc(r);
   const label = [r.member, r.mark, r.shapeLabel].filter(Boolean).join(' · ');
   $('#sketchDlgTitle').textContent = label || 'Shape Sketch';
   if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open','');
@@ -373,6 +380,7 @@ $('#barForm').addEventListener('submit', e=>{
     member,mark,shape,shapeLabel,dia,
     clPerBarMm:cl,qty,unitWtKgPerM:wtPerM,totalLenM,totalWtKg,
     remarks,grade,createdAt:Date.now(),
+    shapeVec: currentShapeVec||null,
     shapeImg: currentShapeImg||null,
     inputs:{}
   };
@@ -408,7 +416,7 @@ $('#barForm').addEventListener('submit', e=>{
    ========================= */
 $('#bbsTable').addEventListener('click', e=>{
   const del=e.target.dataset.del, edit=e.target.dataset.edit, enlarge=e.target.dataset.enlarge;
-  if(enlarge!==undefined){ const r=rows[Number(enlarge)]; if(r&&r.shapeImg) openSketchLightbox(r); return; }
+  if(enlarge!==undefined){ const r=rows[Number(enlarge)]; if(r&&(r.shapeVec||r.shapeImg)) openSketchLightbox(r); return; }
   if(del!==undefined){ rows.splice(Number(del),1); persist(); render(); }
   else if(edit!==undefined){
     const i=Number(edit), r=rows[i]; if(!r) return;
@@ -424,8 +432,14 @@ $('#bbsTable').addEventListener('click', e=>{
     showQty('manual');
     $('#qty').value    = r.qty;
 
-    // Restore shape image
-    if(r.shapeImg){ currentShapeImg=r.shapeImg; $('#shapePreview').src=r.shapeImg; $('#shapePreview').style.display='block'; $('#shapeClearBtn').style.display='inline-flex'; }
+    // Restore shape (vector preferred, raster fallback)
+    if(r.shapeVec || r.shapeImg){
+      currentShapeVec = r.shapeVec || null;
+      currentShapeImg = r.shapeImg || null;
+      $('#shapePreview').src = shapeSrc(r);
+      $('#shapePreview').style.display='block';
+      $('#shapeClearBtn').style.display='inline-flex';
+    }
     else { clearShapeUpload(); }
 
     if(r.shape==='straight'){ $('#straightLen').value=inp.len||''; }
@@ -771,16 +785,22 @@ $('#printBBS').addEventListener('click', async () => {
         rem:    pdf.splitTextToSize(sani(r.remarks||''),    col('rem').w    - 2*pad),
       };
 
-      // Sketch: fit inside the cell preserving aspect ratio
+      // Sketch: fit inside the cell preserving aspect ratio.
+      // Vector models (r.shapeVec) draw as native PDF vectors — tiny + crisp;
+      // uploaded rasters (r.shapeImg) fall back to an embedded image.
       let sk = null;
-      if (r.shapeImg) {
+      const fitBox = ar => {
+        const boxW = col('sketch').w - 2*pad;
+        let dw = boxW, dh = boxW / ar;
+        if (dh > sketchMaxH) { dh = sketchMaxH; dw = sketchMaxH * ar; }
+        return { w:dw, h:dh };
+      };
+      if (r.shapeVec && r.shapeVec.vb && r.shapeVec.vb[3] > 0) {
+        sk = fitBox(r.shapeVec.vb[2] / r.shapeVec.vb[3]);
+      } else if (r.shapeImg) {
         try {
-          const p  = pdf.getImageProperties(r.shapeImg);
-          const ar = p.width / p.height;
-          const boxW = col('sketch').w - 2*pad;
-          let dw = boxW, dh = boxW / ar;
-          if (dh > sketchMaxH) { dh = sketchMaxH; dw = sketchMaxH * ar; }
-          sk = { w:dw, h:dh };
+          const p = pdf.getImageProperties(r.shapeImg);
+          sk = fitBox(p.width / p.height);
         } catch { /* unreadable image → fall through to dash */ }
       }
 
@@ -803,7 +823,14 @@ $('#printBBS').addEventListener('click', async () => {
       if (sk) {
         const sx = col('sketch').x + (col('sketch').w - sk.w) / 2;
         const sy = y + (rowH - sk.h) / 2;
-        try { pdf.addImage(r.shapeImg, 'PNG', sx, sy, sk.w, sk.h); } catch {}
+        if (r.shapeVec && window.ShapeVector) {
+          try { ShapeVector.toPdf(pdf, r.shapeVec, sx, sy, sk.w, sk.h); } catch {}
+          // restore table stroke + text state the vector draw clobbered
+          pdf.setLineWidth(0.2); pdf.setDrawColor(0); pdf.setTextColor(0,0,0);
+          pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
+        } else {
+          try { pdf.addImage(r.shapeImg, 'PNG', sx, sy, sk.w, sk.h); } catch {}
+        }
       } else {
         putText(col('sketch'), '—', y);
       }
@@ -897,9 +924,11 @@ $('#tbody').addEventListener('dragend',()=>{
 /* =========================
    Shape Image Upload
    ========================= */
-let currentShapeImg=null;
+let currentShapeImg=null;   // raster (uploaded, downscaled)
+let currentShapeVec=null;   // vector model (drawn shapes) — preferred
 function clearShapeUpload(){
   currentShapeImg=null;
+  currentShapeVec=null;
   $('#shapeFile').value='';
   $('#shapePreview').style.display='none';
   $('#shapePreview').src='';
@@ -913,11 +942,14 @@ $('#shapeFile').addEventListener('change',()=>{
     $('#shapeFile').value=''; return;
   }
   const reader=new FileReader();
-  reader.onload=ev=>{
-    currentShapeImg=ev.target.result;
+  reader.onload=async ev=>{
+    // Uploads can't be vectorized — downscale/compress raster to keep files small.
+    const raw = ev.target.result;
+    currentShapeImg = window.ShapeVector ? await ShapeVector.downscale(raw) : raw;
+    currentShapeVec = null;
     $('#shapePreview').src=currentShapeImg;
     $('#shapePreview').style.display='block';
-  $('#shapeClearBtn').style.display='inline-flex';
+    $('#shapeClearBtn').style.display='inline-flex';
   };
   reader.readAsDataURL(file);
 });
@@ -969,11 +1001,15 @@ updateCustomPreview();
    Shape Drawer Integration
    ========================= */
 document.getElementById('shapeDrawBtn').addEventListener('click', () => {
-  window.ShapeDrawer.open(dataUrl => {
-    if (!dataUrl) return;
-    currentShapeImg = dataUrl;
+  window.ShapeDrawer.open(result => {
+    if (!result) return;
+    // Vector model preferred; baked diagrams fall back to a raster image.
+    currentShapeVec = result.vec || null;
+    currentShapeImg = result.img || null;
+    const src = currentShapeVec ? ShapeVector.toDataURL(currentShapeVec) : currentShapeImg;
+    if (!src) return;
     const preview = document.getElementById('shapePreview');
-    preview.src = dataUrl;
+    preview.src = src;
     preview.style.display = 'block';
     document.getElementById('shapeClearBtn').style.display = 'inline-flex';
   });
