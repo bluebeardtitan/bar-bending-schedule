@@ -619,7 +619,7 @@ $('#printBBS').addEventListener('click', async () => {
       { key:'idx',    title:'#',             align:'right' },
       { key:'member', title:'Member',        align:'left' },
       { key:'mark',   title:'Mark',          align:'left' },
-      { key:'dia',    title:'Dia',           align:'right' },
+      { key:'dia',    title:'Ø',             align:'right' },
       { key:'shape',  title:'Shape',         align:'left' },
       { key:'sketch', title:'Sketch',        align:'center' },
       { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:15  },
