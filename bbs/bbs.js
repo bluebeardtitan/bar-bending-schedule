@@ -596,10 +596,10 @@ $('#printBBS').addEventListener('click', async () => {
     // The pct values you set don't have to add up to 100 — leave headroom for
     // the auto-sized columns. e.g. { key:'rem', title:'Remarks', align:'left', pct:18 }
     const cols = [
-      { key:'idx',    title:'#',             align:'right',	pct:5  },
+      { key:'idx',    title:'#',             align:'right',	pct:8  },
       { key:'member', title:'Member',        align:'left' ,	pct:20  },
-      { key:'mark',   title:'Mark',          align:'left',	pct:5   },
-      { key:'dia',    title:'Dia',           align:'right',	pct:5  },
+      { key:'mark',   title:'Mark',          align:'left',	pct:8   },
+      { key:'dia',    title:'Dia',           align:'right',	pct:8  },
       { key:'shape',  title:'Shape',         align:'left',	pct:10   },
       { key:'sketch', title:'Sketch',        align:'center' },
       { key:'cl',     title:'CL/Bar (mm)',   align:'right'  },
