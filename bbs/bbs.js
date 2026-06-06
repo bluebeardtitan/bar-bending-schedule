@@ -632,9 +632,10 @@ $('#printBBS').addEventListener('click', async () => {
     const SKETCH_W  = 30;   // images: fixed natural width (mm)
     const MIN_W     = 7;    // floor so headers/numbers never collapse (mm)
     const FLEX_MIN  = 20;   // smallest a free-text column may shrink to (mm)
-    // Only Remarks absorbs leftover/overflow width; every other column — #
-    // through Shape included — is pinned to its content so it never stretches.
-    const FLEX = new Set(['rem']);
+    // Free-text columns share leftover/overflow width proportionally to their
+    // content, so Remarks no longer swallows all the slack and balloon. Numeric
+    // and fixed-size columns stay pinned to their content.
+    const FLEX = new Set(['member','mark','shape','rem']);
 
     pdf.setFontSize(fontSize);
     // Header measured by its longest word so multi-word titles can wrap across
