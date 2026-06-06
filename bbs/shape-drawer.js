@@ -2116,11 +2116,11 @@ function populateQuickShapes(){
    Target longest side ~600px; pixelRatio 2–4 keeps files small. */
 const EXPORT_TARGET_PX = 600;
 
-function computeHistoryBounds() {
+function computeHistoryBounds(hist = history) {
   let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
   const grow=(x,y)=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;};
   const pad=(x,y,r)=>{grow(x-r,y-r);grow(x+r,y+r);};
-  for (const cmd of history) {
+  for (const cmd of hist) {
     if (cmd.type==='shape') {
       // Baked diagram (generator/iso fallback): drawShapeDiagram centres it in
       // a min(sw,sh) square. Crop to that square so the export keeps the shape's
@@ -2344,7 +2344,131 @@ function buildVectorModel() {
   return { vb, el };
 }
 
+/* ── TEXTURED vector model ──
+   Reproduces the ribbed/3D rebar look as vector primitives (no raster):
+   a thick body stroke, a white sheen offset upward, evenly spaced rib
+   strokes, and a hairline outline — mirroring strokeRebarPath /
+   drawRibsAlongSamples exactly, traced along the same path samples used
+   on screen. Bigger than the clean model (more primitives) but still
+   vector, so PDFs stay far smaller than embedding PNGs. */
+function _emitRibs(el, samples, diam, cfg) {
+  const r = diam/2, sp = cfg.ribSpacing*(diam/16), ribH = diam*0.22, ribW = diam*cfg.ribWidth;
+  const ribAngRad = cfg.ribAngle*Math.PI/180;
+  let dist = sp*0.4, ribIndex = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const prev = samples[i-1], curr = samples[i];
+    const segLen = Math.hypot(curr.x-prev.x, curr.y-prev.y);
+    if (segLen < 0.001) continue;
+    dist += segLen;
+    while (dist >= sp) {
+      dist -= sp;
+      const t = 1 - dist/segLen;
+      const px = prev.x + (curr.x-prev.x)*t, py = prev.y + (curr.y-prev.y)*t;
+      let ux = prev.ux + ((curr.ux-prev.ux)*Math.max(0,Math.min(1,t)));
+      let uy = prev.uy + ((curr.uy-prev.uy)*Math.max(0,Math.min(1,t)));
+      const tlen = Math.hypot(ux, uy);
+      if (tlen > 0.001) { ux /= tlen; uy /= tlen; } else { ux = 1; uy = 0; }
+      const flip = (cfg.alternate && ribIndex % 2 === 0) ? 1 : -1;
+      const rAngle = Math.atan2(uy, ux) + (cfg.ribAngle === 90 ? Math.PI/2 : ribAngRad*flip);
+      const rdx = Math.cos(rAngle), rdy = Math.sin(rAngle), halfLen = r + ribH*0.6;
+      el.push({ k:'line', col:GRAY.rib, lw:ribW, a:[px-rdx*halfLen, py-rdy*halfLen], b:[px+rdx*halfLen, py+rdy*halfLen] });
+      const hox = -rdy*ribW*0.35, hoy = rdx*ribW*0.35;
+      el.push({ k:'line', col:GRAY.ribHi, lw:ribW*0.4, a:[px-rdx*halfLen+hox, py-rdy*halfLen+hoy], b:[px+rdx*halfLen+hox, py+rdy*halfLen+hoy] });
+      ribIndex++;
+    }
+  }
+}
+
+/* Douglas–Peucker: drop samples that don't change the polyline shape. The
+   stroked body/sheen/outline don't need 2 px resolution; ribs still use the
+   full sample set for exact placement. Keeps the textured PDF light. */
+function _simplify(pts, tol) {
+  if (pts.length < 3) return pts.slice();
+  const keep = new Array(pts.length).fill(false);
+  keep[0] = keep[pts.length-1] = true;
+  const stack = [[0, pts.length-1]];
+  const t2 = tol*tol;
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax=pts[a].x, ay=pts[a].y, bx=pts[b].x, by=pts[b].y;
+    const dx=bx-ax, dy=by-ay, len2=dx*dx+dy*dy || 1;
+    let maxD=-1, idx=-1;
+    for (let i=a+1; i<b; i++) {
+      const t=((pts[i].x-ax)*dx + (pts[i].y-ay)*dy)/len2;
+      const px=ax+t*dx, py=ay+t*dy;
+      const dd=(pts[i].x-px)**2 + (pts[i].y-py)**2;
+      if (dd>maxD) { maxD=dd; idx=i; }
+    }
+    if (maxD > t2 && idx > 0) { keep[idx]=true; stack.push([a,idx],[idx,b]); }
+  }
+  return pts.filter((_,i)=>keep[i]);
+}
+
+function _emitTexturedBar(el, samples, diam, styleId, closed) {
+  if (!samples || samples.length < 2) return;
+  const cfg = REBAR_STYLES.find(s => s.id === styleId) || REBAR_STYLES[0];
+  const d = Math.max(diam || 14, 4);
+  const rnd = n => Math.round(n*10)/10;
+  const simp = _simplify(samples, 1.5);
+  const line = simp.map(s => [rnd(s.x), rnd(s.y)]);
+  el.push({ k:'path', d:line, cl:closed, col:GRAY.body, lw:d });                                  // body
+  el.push({ k:'path', d:simp.map(s => [rnd(s.x), rnd(s.y - d*0.32)]), cl:closed, col:GRAY.hi, lw:d*0.28 }); // sheen
+  if (cfg.ribSpacing > 0 && d >= 5) _emitRibs(el, samples, d, cfg);                                // ribs
+  el.push({ k:'path', d:line, cl:closed, col:GRAY.edge, lw:0.8 });                                 // outline
+}
+
+/* geometry samples for one bar command, matching how renderCmd draws it */
+function _barSamples(cmd, d) {
+  if (cmd.type === 'rebar-path')
+    return (cmd.bezier ? buildSplineGeometry(cmd.points, cmd.closed) : buildFilletGeometry(cmd.points, d, cmd.closed)).samples;
+  if (cmd.type === 'ortho-bar')
+    return buildOrthoGeometry(cmd.closed ? [...cmd.points, cmd.points[0]] : cmd.points, d).samples;
+  if (cmd.type === 'rect') {
+    const lx=Math.min(cmd.x,cmd.x+cmd.w), rx=Math.max(cmd.x,cmd.x+cmd.w), ty=Math.min(cmd.y,cmd.y+cmd.h), by=Math.max(cmd.y,cmd.y+cmd.h);
+    const c=[{x:lx,y:ty},{x:rx,y:ty},{x:rx,y:by},{x:lx,y:by}];
+    return buildOrthoGeometry([...c, c[0]], d).samples;
+  }
+  if (cmd.type === 'circle') {
+    const steps=Math.max(36,Math.round((cmd.rx+cmd.ry)*0.9)), pts=[];
+    for(let i=0;i<steps;i++){const a=i/steps*Math.PI*2; pts.push({x:cmd.cx+Math.cos(a)*cmd.rx, y:cmd.cy+Math.sin(a)*cmd.ry});}
+    return buildSplineGeometry(pts, true).samples;
+  }
+  return null;
+}
+
+function buildTexturedModel(hist) {
+  if (!hist || !hist.length) return null;
+  if (hist.some(c => c.type === 'shape')) return null;
+  const bounds = computeHistoryBounds(hist);
+  if (!bounds) return null;
+  const { minX, minY, maxX, maxY } = bounds;
+  const bw = maxX-minX, bh = maxY-minY;
+  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
+  const vb = [minX-p, minY-p, bw+p*2, bh+p*2];
+
+  const el = [];
+  for (const cmd of hist) {
+    const d = cmd.diam || 16;
+    if (cmd.type==='rebar-path' || cmd.type==='ortho-bar' || cmd.type==='rect' || cmd.type==='circle') {
+      const samples = _barSamples(cmd, d);
+      const closed = cmd.type==='rect' ? true : !!cmd.closed;
+      _emitTexturedBar(el, samples, d, cmd.style || activeStyle, closed);
+    } else if (cmd.type === 'text') {
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz:cmd.size||13, col:'#555', anchor:'l' });
+    } else if (cmd.type === 'dim-aligned') {
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size);
+    } else if (cmd.type === 'dim-angular') {
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+    } else if (cmd.type === 'dim-leader') {
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size);
+    }
+  }
+  if (!el.length) return null;
+  return { vb, el };
+}
+
 window.ShapeDrawer = {
+  buildTexturedModel,
   async open(callback) {
     ensureDrawerModal();
     await loadShapeLibrary();
@@ -2355,8 +2479,12 @@ window.ShapeDrawer = {
     document.getElementById('drawerDone').onclick=()=>{
       if(isDrawing)commitRebarPath();
       // Prefer a compact vector model; fall back to raster for baked diagrams.
+      // Also hand back the raw geometry so a textured-vector model can be
+      // rebuilt on demand at PDF-export time (without storing pixels).
       const vec = buildVectorModel();
-      const result = vec ? { vec } : { img: exportToPNG() };
+      const result = vec
+        ? { vec, hist: JSON.parse(JSON.stringify(history)) }
+        : { img: exportToPNG() };
       dlg.close();
       if(_stageResizeObserver){_stageResizeObserver.disconnect();_stageResizeObserver=null;}
       if(drawerCallback)drawerCallback(result);

@@ -98,6 +98,9 @@
     const scale = Math.min(W / vw, H / vh);
     const ox = X + (W - vw * scale) / 2 - vx * scale;
     const oy = Y + (H - vh * scale) / 2 - vy * scale;
+    // Round caps/joins — bars (and ribs) are drawn round, like the on-screen look.
+    if (pdf.setLineCap)  pdf.setLineCap('round');
+    if (pdf.setLineJoin) pdf.setLineJoin('round');
     const mx = x => ox + x * scale;
     const my = y => oy + y * scale;
     const mlw = lw => Math.max(0.15, (lw != null ? lw : 1.4) * scale);

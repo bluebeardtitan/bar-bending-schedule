@@ -381,6 +381,7 @@ $('#barForm').addEventListener('submit', e=>{
     clPerBarMm:cl,qty,unitWtKgPerM:wtPerM,totalLenM,totalWtKg,
     remarks,grade,createdAt:Date.now(),
     shapeVec: currentShapeVec||null,
+    shapeHist: currentShapeHist||null,
     shapeImg: currentShapeImg||null,
     inputs:{}
   };
@@ -436,6 +437,7 @@ $('#bbsTable').addEventListener('click', e=>{
     if(r.shapeVec || r.shapeImg){
       currentShapeVec = r.shapeVec || null;
       currentShapeImg = r.shapeImg || null;
+      currentShapeHist = r.shapeHist || null;
       $('#shapePreview').src = shapeSrc(r);
       $('#shapePreview').style.display='block';
       $('#shapeClearBtn').style.display='inline-flex';
@@ -580,6 +582,10 @@ $('#loadJSON').addEventListener('click',()=>{
    ========================= */
 $('#printBBS').addEventListener('click', async () => {
   updatePrintMeta();
+
+  // Opt-in: draw the ribbed/3D rebar texture as vectors (larger PDF) instead
+  // of the clean centreline. Off → clean vector (smallest files).
+  const pdfTextured = !!($('#pdfTextured') && $('#pdfTextured').checked);
 
   const btn = $('#printBBS');
   btn.disabled = true;
@@ -786,8 +792,15 @@ $('#printBBS').addEventListener('click', async () => {
       };
 
       // Sketch: fit inside the cell preserving aspect ratio.
-      // Vector models (r.shapeVec) draw as native PDF vectors — tiny + crisp;
-      // uploaded rasters (r.shapeImg) fall back to an embedded image.
+      // Pick the vector model to draw — textured (opt-in, rebuilt from the
+      // drawn geometry) or the stored clean vector. Both draw as native PDF
+      // vectors (tiny + crisp); uploaded rasters fall back to an image.
+      let model = null;
+      if (pdfTextured && r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildTexturedModel) {
+        try { model = ShapeDrawer.buildTexturedModel(r.shapeHist); } catch {}
+      }
+      if (!model && r.shapeVec && r.shapeVec.vb) model = r.shapeVec;
+
       let sk = null;
       const fitBox = ar => {
         const boxW = col('sketch').w - 2*pad;
@@ -795,8 +808,8 @@ $('#printBBS').addEventListener('click', async () => {
         if (dh > sketchMaxH) { dh = sketchMaxH; dw = sketchMaxH * ar; }
         return { w:dw, h:dh };
       };
-      if (r.shapeVec && r.shapeVec.vb && r.shapeVec.vb[3] > 0) {
-        sk = fitBox(r.shapeVec.vb[2] / r.shapeVec.vb[3]);
+      if (model && model.vb && model.vb[3] > 0) {
+        sk = fitBox(model.vb[2] / model.vb[3]);
       } else if (r.shapeImg) {
         try {
           const p = pdf.getImageProperties(r.shapeImg);
@@ -823,10 +836,11 @@ $('#printBBS').addEventListener('click', async () => {
       if (sk) {
         const sx = col('sketch').x + (col('sketch').w - sk.w) / 2;
         const sy = y + (rowH - sk.h) / 2;
-        if (r.shapeVec && window.ShapeVector) {
-          try { ShapeVector.toPdf(pdf, r.shapeVec, sx, sy, sk.w, sk.h); } catch {}
+        if (model && window.ShapeVector) {
+          try { ShapeVector.toPdf(pdf, model, sx, sy, sk.w, sk.h); } catch {}
           // restore table stroke + text state the vector draw clobbered
           pdf.setLineWidth(0.2); pdf.setDrawColor(0); pdf.setTextColor(0,0,0);
+          if (pdf.setLineCap) pdf.setLineCap('butt');
           pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
         } else {
           try { pdf.addImage(r.shapeImg, 'PNG', sx, sy, sk.w, sk.h); } catch {}
@@ -926,9 +940,11 @@ $('#tbody').addEventListener('dragend',()=>{
    ========================= */
 let currentShapeImg=null;   // raster (uploaded, downscaled)
 let currentShapeVec=null;   // vector model (drawn shapes) — preferred
+let currentShapeHist=null;  // raw drawer geometry — for textured-vector export
 function clearShapeUpload(){
   currentShapeImg=null;
   currentShapeVec=null;
+  currentShapeHist=null;
   $('#shapeFile').value='';
   $('#shapePreview').style.display='none';
   $('#shapePreview').src='';
@@ -1006,6 +1022,7 @@ document.getElementById('shapeDrawBtn').addEventListener('click', () => {
     // Vector model preferred; baked diagrams fall back to a raster image.
     currentShapeVec = result.vec || null;
     currentShapeImg = result.img || null;
+    currentShapeHist = result.hist || null;   // enables textured-vector export
     const src = currentShapeVec ? ShapeVector.toDataURL(currentShapeVec) : currentShapeImg;
     if (!src) return;
     const preview = document.getElementById('shapePreview');
