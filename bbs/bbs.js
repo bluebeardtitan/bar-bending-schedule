@@ -474,7 +474,12 @@ $('#barForm').addEventListener('submit', e=>{
 $('#bbsTable').addEventListener('click', e=>{
   const del=e.target.dataset.del, edit=e.target.dataset.edit, enlarge=e.target.dataset.enlarge;
   if(enlarge!==undefined){ const r=rows[Number(enlarge)]; if(r&&(r.shapeVec||r.shapeImg)) openSketchLightbox(r); return; }
-  if(del!==undefined){ rows.splice(Number(del),1); persist(); render(); }
+  if(del!==undefined){
+    const r=rows[Number(del)];
+    const label=r?`${r.member||'item'}${r.mark?' ('+r.mark+')':''}`:'this row';
+    if(!confirm(`Delete ${label} from the schedule?`)) return;
+    rows.splice(Number(del),1); persist(); render();
+  }
   else if(edit!==undefined){
     const i=Number(edit), r=rows[i]; if(!r) return;
     const inp=r.inputs||{};
