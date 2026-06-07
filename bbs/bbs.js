@@ -169,6 +169,55 @@ const CL = {
   }
 };
 
+/* Worked cutting-length formula (real values substituted) for the schedule's
+   "CL Calculation" column. Each function mirrors the matching CL.* math exactly
+   so the trailing "= …" always equals the rounded CL/Bar value. Uses Unicode
+   math glyphs on screen/CSV; the PDF exporter sanitises π/√/− to ASCII. */
+const MINUS = '−', TIMES = '×';
+const fmtN = n => { const r = Math.round(n*10)/10; return String(r); };
+const CLcalc = {
+  straight: ({len}) => `${fmtN(len)}`,
+  L: ({A,B,angle,dia}) => { const d=bendDeduction(angle,dia);
+    return `${fmtN(A)} + ${fmtN(B)} ${MINUS} ${fmtN(d)} = ${fmt0(A+B-d)}`; },
+  U: ({A,B,C,dia}) => { const d=bendDeduction(90,dia);
+    return `${fmtN(A)} + ${fmtN(B)} + ${fmtN(C)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(A+B+C-2*d)}`; },
+  stirrup: ({A,B,cover,angle,dia,type,diaCirc,side}) => {
+    const ded=settings.ded[angle]||0, hook=settings.hooks[angle]||0;
+    if(type==='2'){ const a=A-2*cover+dia, b=B-2*cover+dia;
+      return `2${TIMES}${fmtN(a)} + 2${TIMES}${fmtN(b)} ${MINUS} 4${TIMES}${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(2*a+2*b-4*ded+2*hook)}`; }
+    if(type==='4'){ const a=A-2*cover+dia, b=B-2*cover+dia;
+      return `2${TIMES}${fmtN(a)} + 4${TIMES}${fmtN(b)} ${MINUS} 6${TIMES}${fmtN(ded)} + 4${TIMES}${fmtN(hook)} = ${fmt0(2*a+4*b-6*ded+4*hook)}`; }
+    if(type==='6'){ const a=A-2*cover+dia, b=B-2*cover+dia;
+      return `2${TIMES}${fmtN(a)} + 6${TIMES}${fmtN(b)} ${MINUS} 8${TIMES}${fmtN(ded)} + 6${TIMES}${fmtN(hook)} = ${fmt0(2*a+6*b-8*ded+6*hook)}`; }
+    if(type==='circle'){ const d=diaCirc-2*cover+dia;
+      return `π${TIMES}${fmtN(d)} ${MINUS} ${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(Math.PI*d-ded+2*hook)}`; }
+    if(type==='diamond'){ const s=side-2*cover+dia;
+      return `4${TIMES}${fmtN(s)} ${MINUS} 4${TIMES}${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(4*s-4*ded+2*hook)}`; }
+    return '';
+  },
+  circle:  ({dia,cover,diaBar}) => { const d=dia+2*cover-diaBar;
+    return `π(${fmtN(dia)} + 2${TIMES}${fmtN(cover)} ${MINUS} ${fmtN(diaBar)}) = ${fmt0(Math.PI*d)}`; },
+  spiral:  ({dia,cover,pitch,turns,diaBar}) => { const D=dia+2*cover-diaBar;
+    return `√((π${TIMES}${fmtN(D)})² + ${fmtN(pitch)}²) ${TIMES} ${fmtN(turns)} = ${fmt0(Math.sqrt((Math.PI*D)**2+pitch**2)*turns)}`; },
+  crank:   ({span,depth,angle,dia}) => { const d=bendDeduction(angle,dia), ext=depth/Math.sin(angle*Math.PI/180);
+    return `${fmtN(span)} + 2${TIMES}${fmtN(ext)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(span+ext*2-2*d)}`; },
+  chair:   ({height,top,base}) =>
+    `2${TIMES}${fmtN(height)} + ${fmtN(top)} + ${fmtN(base)} = ${fmt0(2*height+top+base)}`,
+  'hook-semi': ({len,ends,dia}) => { const n=ends==='both'?2:1, h=hookLength(180,dia);
+    return `${fmtN(len)} + ${n}${TIMES}${fmtN(h)} = ${fmt0(len+n*h)}`; },
+  'hook-L':    ({len,ends,dia}) => { const n=ends==='both'?2:1, h=hookLength(90,dia);
+    return `${fmtN(len)} + ${n}${TIMES}${fmtN(h)} = ${fmt0(len+n*h)}`; },
+  custom:  ({items,dia}) => {
+    let s='', v=0, first=true;
+    for(const it of items){
+      if(it.type==='leg'){ const L=Number(it.len||0); v+=L; s+=(first?'':' + ')+fmtN(L); first=false; }
+      if(it.type==='bend'){ const d=bendDeduction(it.angle,dia); v-=d; s+=` ${MINUS} ${fmtN(d)}`;
+        if(it.hook){ const h=hookLength(it.angle,dia); v+=h; s+=` + ${fmtN(h)}`; } }
+    }
+    return `${s.trim()} = ${fmt0(v)}`;
+  }
+};
+
 /* =========================
    State & Table
    ========================= */
@@ -203,6 +252,7 @@ function render(){
       <td style="text-align:center;padding:4px 6px">${src
         ? `<img src="${src}" alt="shape" class="sketch-thumb" data-enlarge="${i}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
         : '<span class="subtle">—</span>'}</td>
+      <td class="mono" style="font-size:11px;line-height:1.4;min-width:140px">${r.clCalc||'<span class="subtle">—</span>'}</td>
       <td class="mono right">${fmt0(r.clPerBarMm)}</td>
       <td class="mono right">${r.qty}</td>
       <td class="mono right">${fmt3(r.totalLenM)}</td>
@@ -328,45 +378,47 @@ $('#barForm').addEventListener('submit', e=>{
   const grade   = $('#grade').value;
   const qtyMode = $('#qtyMode').value;
 
-  let cl=0, shapeLabel='';
+  let cl=0, clCalc='', shapeLabel='';
   if(shape==='straight'){
-    const len=Number($('#straightLen').value);
-    cl=CL.straight({len}); shapeLabel='Straight';
+    const a={len:Number($('#straightLen').value)};
+    cl=CL.straight(a); clCalc=CLcalc.straight(a); shapeLabel='Straight';
   }else if(shape==='L'){
-    const A=Number($('#L_A').value),B=Number($('#L_B').value),angle=Number($('#L_angle').value);
-    cl=CL.L({A,B,angle,dia}); shapeLabel=`L (${angle}°)`;
+    const a={A:Number($('#L_A').value),B:Number($('#L_B').value),angle:Number($('#L_angle').value),dia};
+    cl=CL.L(a); clCalc=CLcalc.L(a); shapeLabel=`L (${a.angle}°)`;
   }else if(shape==='U'){
-    const A=Number($('#U_A').value),B=Number($('#U_B').value),C=Number($('#U_C').value);
-    cl=CL.U({A,B,C,dia}); shapeLabel='U';
+    const a={A:Number($('#U_A').value),B:Number($('#U_B').value),C:Number($('#U_C').value),dia};
+    cl=CL.U(a); clCalc=CLcalc.U(a); shapeLabel='U';
   }else if(shape==='stirrup'){
     const type=$('#S_type').value, cover=Number($('#S_cover').value), angle=Number($('#S_angle').value);
-    if(type==='2'||type==='4'||type==='6'){ cl=CL.stirrup({A:Number($('#S_A').value),B:Number($('#S_B').value),cover,angle,dia,type}); }
-    else if(type==='circle'){ cl=CL.stirrup({diaCirc:Number($('#S_diaCirc').value),cover,angle,dia,type}); }
-    else if(type==='diamond'){ cl=CL.stirrup({side:Number($('#S_side').value),cover,angle,dia,type}); }
-    shapeLabel=`Stirrup ${type}-legged`;
+    let a;
+    if(type==='2'||type==='4'||type==='6'){ a={A:Number($('#S_A').value),B:Number($('#S_B').value),cover,angle,dia,type}; }
+    else if(type==='circle'){ a={diaCirc:Number($('#S_diaCirc').value),cover,angle,dia,type}; }
+    else if(type==='diamond'){ a={side:Number($('#S_side').value),cover,angle,dia,type}; }
+    cl=CL.stirrup(a); clCalc=CLcalc.stirrup(a); shapeLabel=`Stirrup ${type}-legged`;
   }else if(shape==='circle'){
-    const diaVal=Number($('#C_dia').value), cover=Number($('#C_cover').value);
-    cl=CL.circle({dia:diaVal,cover,diaBar:dia}); shapeLabel=`Circle ⌀${diaVal}`;
+    const diaVal=Number($('#C_dia').value), a={dia:diaVal,cover:Number($('#C_cover').value),diaBar:dia};
+    cl=CL.circle(a); clCalc=CLcalc.circle(a); shapeLabel=`Circle ⌀${diaVal}`;
   }else if(shape==='spiral'){
-    const diaVal=Number($('#SP_dia').value),pitch=Number($('#SP_pitch').value),turns=Number($('#SP_turns').value),cover=Number($('#SP_cover').value);
-    cl=CL.spiral({dia:diaVal,pitch,turns,cover,diaBar:dia}); shapeLabel=`Spiral ⌀${diaVal} (${turns} turns)`;
+    const diaVal=Number($('#SP_dia').value),turns=Number($('#SP_turns').value);
+    const a={dia:diaVal,pitch:Number($('#SP_pitch').value),turns,cover:Number($('#SP_cover').value),diaBar:dia};
+    cl=CL.spiral(a); clCalc=CLcalc.spiral(a); shapeLabel=`Spiral ⌀${diaVal} (${turns} turns)`;
   }else if(shape==='crank'){
-    const span=Number($('#CR_span').value),depth=Number($('#CR_depth').value),angle=Number($('#CR_angle').value);
-    cl=CL.crank({span,depth,angle,dia}); shapeLabel=`Crank ${angle}°`;
+    const a={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value),dia};
+    cl=CL.crank(a); clCalc=CLcalc.crank(a); shapeLabel=`Crank ${a.angle}°`;
   }else if(shape==='chair'){
-    const height=Number($('#CH_height').value),top=Number($('#CH_top').value),base=Number($('#CH_base').value);
-    cl=CL.chair({height,top,base,dia}); shapeLabel=`Chair ${height}h`;
+    const a={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value),dia};
+    cl=CL.chair(a); clCalc=CLcalc.chair(a); shapeLabel=`Chair ${a.height}h`;
   }else if(shape==='hook-semi'){
-    const len=Number($('#HS_len').value), ends=$('#HS_ends').value;
-    cl=CL['hook-semi']({len,ends,dia});
-    shapeLabel=`Straight 180° hook (${ends==='both'?'both ends':ends+' end'})`;
+    const a={len:Number($('#HS_len').value),ends:$('#HS_ends').value,dia};
+    cl=CL['hook-semi'](a); clCalc=CLcalc['hook-semi'](a);
+    shapeLabel=`Straight 180° hook (${a.ends==='both'?'both ends':a.ends+' end'})`;
   }else if(shape==='hook-L'){
-    const len=Number($('#HL_len').value), ends=$('#HL_ends').value;
-    cl=CL['hook-L']({len,ends,dia});
-    shapeLabel=`Straight 90° hook (${ends==='both'?'both ends':ends+' end'})`;
+    const a={len:Number($('#HL_len').value),ends:$('#HL_ends').value,dia};
+    cl=CL['hook-L'](a); clCalc=CLcalc['hook-L'](a);
+    shapeLabel=`Straight 90° hook (${a.ends==='both'?'both ends':a.ends+' end'})`;
   }else if(shape==='custom'){
-    const items=customItems.filter(x=>x.type!=='deleted');
-    cl=CL.custom({items,dia}); shapeLabel='Custom';
+    const a={items:customItems.filter(x=>x.type!=='deleted'),dia};
+    cl=CL.custom(a); clCalc=CLcalc.custom(a); shapeLabel='Custom';
   }
 
   if(!isFinite(cl)||cl<=0){ if(window._showFeedback) window._showFeedback('⚠ Check dimensions — CL must be > 0','err'); else alert('Please provide valid dimensions. Cutting length must be > 0.'); return; }
@@ -378,7 +430,7 @@ $('#barForm').addEventListener('submit', e=>{
 
   const row = {
     member,mark,shape,shapeLabel,dia,
-    clPerBarMm:cl,qty,unitWtKgPerM:wtPerM,totalLenM,totalWtKg,
+    clPerBarMm:cl,clCalc,qty,unitWtKgPerM:wtPerM,totalLenM,totalWtKg,
     remarks,grade,createdAt:Date.now(),
     shapeVec: currentShapeVec||null,
     shapeHist: currentShapeHist||null,
@@ -524,14 +576,14 @@ function toCSV(){
   lines.push(''); // blank separator
 
   // Table headers
-  lines.push(['#','Member','Mark','Dia (mm)','Shape','CL / Bar (mm)','Qty','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
+  lines.push(['#','Member','Mark','Dia (mm)','Shape','CL Calculation','CL / Bar (mm)','Qty','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
   rows.forEach((r,i)=>{
     lines.push([
-      i+1, `"${r.member}"`, r.mark||'', r.dia, r.shapeLabel, fmt0(r.clPerBarMm),
+      i+1, `"${r.member}"`, r.mark||'', r.dia, r.shapeLabel, csvEscape(r.clCalc||''), fmt0(r.clPerBarMm),
       r.qty, fmt3(r.totalLenM), fmt3(r.unitWtKgPerM), fmt3(r.totalWtKg), `"${(r.remarks||'').replace(/"/g,"'")}"`
     ].join(','));
   });
-  lines.push(['Totals','','','','','','',
+  lines.push(['Totals','','','','','','','',
     fmt3(rows.reduce((a,b)=>a+b.totalLenM,0)),'',
     fmt3(rows.reduce((a,b)=>a+b.totalWtKg,0)),''
   ].join(','));
@@ -603,7 +655,8 @@ $('#printBBS').addEventListener('click', async () => {
 
     // Standard PDF fonts use WinAnsi encoding — swap glyphs they can't encode
     // (e.g. ⌀ U+2300) for a supported equivalent so they don't drop out.
-    const sani = s => String(s == null ? '' : s).replace(/⌀/g, 'Ø');
+    const sani = s => String(s == null ? '' : s)
+      .replace(/⌀/g, 'Ø').replace(/π/g, 'pi').replace(/√/g, 'sqrt').replace(/−/g, '-');
 
     const pad   = 1.6;     // cell padding (mm)
     const lineH = 3.6;     // text line height (mm)
@@ -622,16 +675,18 @@ $('#printBBS').addEventListener('click', async () => {
       { key:'dia',    title:'Ø',             align:'right' },
       { key:'shape',  title:'Shape',         align:'left' },
       { key:'sketch', title:'Sketch',        align:'center' },
-      { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:15  },
-      { key:'qty',    title:'Qty',           align:'right', pct:15  },
-      { key:'totL',   title:'Total L (m)',   align:'right', pct:15 },
-      { key:'wtm',    title:'Wt/m (kg)',     align:'right', pct:15 },
-      { key:'totW',   title:'Total Wt (kg)', align:'right', pct:15 },
-      { key:'rem',    title:'Remarks',       align:'left', pct:15   },
+      { key:'calc',   title:'CL Calculation',align:'left',  pct:16 },
+      { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:12  },
+      { key:'qty',    title:'Qty',           align:'right', pct:9  },
+      { key:'totL',   title:'Total L (m)',   align:'right', pct:12 },
+      { key:'wtm',    title:'Wt/m (kg)',     align:'right', pct:12 },
+      { key:'totW',   title:'Total Wt (kg)', align:'right', pct:12 },
+      { key:'rem',    title:'Remarks',       align:'left', pct:13   },
     ];
 
     // sanitize for measurement consistency with how values are drawn later
-    const saniM = s => String(s == null ? '' : s).replace(/⌀/g, 'Ø');
+    const saniM = s => String(s == null ? '' : s)
+      .replace(/⌀/g, 'Ø').replace(/π/g, 'pi').replace(/√/g, 'sqrt').replace(/−/g, '-');
     // Every string a column must hold (header + all cells + totals), per key
     const cellStrings = key => {
       if (key === 'sketch') return [];
@@ -643,6 +698,7 @@ $('#printBBS').addEventListener('click', async () => {
           case 'mark':   out.push(saniM(r.mark||'')); break;
           case 'dia':    out.push(String(r.dia)); break;
           case 'shape':  out.push(saniM(r.shapeLabel||'')); break;
+          case 'calc':   out.push(saniM(r.clCalc||'')); break;
           case 'cl':     out.push(fmt0(r.clPerBarMm)); break;
           case 'qty':    out.push(String(r.qty)); break;
           case 'totL':   out.push(fmt3(r.totalLenM)); break;
@@ -783,6 +839,7 @@ $('#printBBS').addEventListener('click', async () => {
         mark:   pdf.splitTextToSize(sani(r.mark||''),       col('mark').w   - 2*pad),
         dia:    String(r.dia),
         shape:  pdf.splitTextToSize(sani(r.shapeLabel||''), col('shape').w  - 2*pad),
+        calc:   pdf.splitTextToSize(sani(r.clCalc||''),      col('calc').w   - 2*pad),
         cl:     fmt0(r.clPerBarMm),
         qty:    String(r.qty),
         totL:   fmt3(r.totalLenM),
@@ -817,7 +874,7 @@ $('#printBBS').addEventListener('click', async () => {
         } catch { /* unreadable image → fall through to dash */ }
       }
 
-      const maxLines = Math.max(t.member.length, t.shape.length, t.rem.length, 1);
+      const maxLines = Math.max(t.member.length, t.shape.length, t.calc.length, t.rem.length, 1);
       const rowH = Math.max(maxLines * lineH, sk ? sk.h : 0) + 2 * pad;
 
       if (y + rowH > pageH - margin) {
@@ -848,6 +905,7 @@ $('#printBBS').addEventListener('click', async () => {
       } else {
         putText(col('sketch'), '—', y);
       }
+      putText(col('calc'), t.calc, y);
       putText(col('cl'),   t.cl,   y);
       putText(col('qty'),  t.qty,  y);
       putText(col('totL'), t.totL, y);
@@ -863,7 +921,7 @@ $('#printBBS').addEventListener('click', async () => {
     if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
     pdf.setTextColor(0,0,0);
-    const labelW = cols.slice(0,8).reduce((a,c)=>a+c.w,0);
+    const labelW = cols.slice(0,9).reduce((a,c)=>a+c.w,0);
     // Re-assert the white fill before every cell: text() in between resets the
     // active fill colour to the text colour (black), which would otherwise
     // paint the following cells solid black.

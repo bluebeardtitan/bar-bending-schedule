@@ -1131,8 +1131,6 @@ function buildShapeDefinition(meta) {
     return o;
   });
   const def={id:meta.id,label:meta.label||meta.id,group:'quick'};
-  if(meta.shapeCode)def.shapeCode=meta.shapeCode;
-  if(meta.formula)def.formula=meta.formula;
   def.segments=segments;
   if(dims.length)def.dims=dims;
   if(texts.length)def.texts=texts;
@@ -1144,9 +1142,7 @@ function exportDrawnShape() {
   if(!id)return;
   const safeId=id.replace(/[^a-zA-Z0-9_-]/g,'-');
   const label=(prompt('Button label:',safeId)||safeId).trim();
-  const shapeCode=(prompt('Standard code (optional):','')||'').trim();
-  const formula=(prompt('Cutting-length formula (optional):','')||'').trim();
-  const result=buildShapeDefinition({id:safeId,label,shapeCode,formula});
+  const result=buildShapeDefinition({id:safeId,label});
   if(result.error){alert(result.error);return;}
   showExportPanel(formatCompactShape(result.def),safeId);
 }
@@ -1155,8 +1151,6 @@ function formatCompactShape(def) {
   const q=s=>JSON.stringify(s), ja=a=>JSON.stringify(a);
   const scalars=[];
   scalars.push(`"id": ${q(def.id)}, "label": ${q(def.label)}`);
-  if(def.shapeCode) scalars[scalars.length-1]+=`, "shapeCode": ${q(def.shapeCode)}`;
-  if(def.formula) scalars.push(`"formula": ${q(def.formula)}`);
   scalars.push(`"group": ${q(def.group||'quick')}`);
   const segObjs=(def.segments||[]).map(s=>{
     let o=`{ "pts": ${ja(s.pts)}, "style": ${q(s.style)}`;
@@ -2117,7 +2111,7 @@ function populateQuickShapes(){
   const host=document.getElementById('quickShapeList'); if(!host)return;
   const quick=window.SHAPE_LIB_LIST.filter(s=>(s.group||'quick')==='quick');
   if(!quick.length){host.innerHTML='<span style="font-size:10px;color:var(--muted)">No shapes</span>';return;}
-  host.innerHTML=quick.map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.shapeCode?'Standard shape '+s.shapeCode:''}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label||s.id}</button>`).join('');
+  host.innerHTML=quick.map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.label||s.id}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label||s.id}</button>`).join('');
   host.querySelectorAll('.shape-prev-btn').forEach(b=>b.addEventListener('click',()=>{
     const def=(window.SHAPE_LIB||{})[b.dataset.shape];
     const cmds=shapeDefToCommands(def, getBarSize(), activeStyle);
