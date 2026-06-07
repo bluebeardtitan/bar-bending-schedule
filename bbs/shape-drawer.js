@@ -897,75 +897,133 @@ const drawerHTML = `
     <div id="drawerSidebar" style="width:192px;flex-shrink:0;border-right:1px solid var(--border);padding:11px 10px;display:flex;flex-direction:column;gap:8px;overflow-y:auto;font-size:12px;max-height:calc(96vh - 56px)">
 
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Tool</div>
-      <div style="display:flex;flex-wrap:wrap;gap:3px" id="toolBtns">
-        <button class="btn small ghost drawer-tool" data-tool="rebar-path"  title="Rebar Path — Click to add points · B=toggle Bézier · Dbl-click or Enter to finish · Esc to cancel"  style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">〽</button>
-        <button class="btn small ghost drawer-tool" data-tool="ortho-bar"   title="Ortho Bar — Ortho mode: clicks snap H/V · Dbl-click or Enter to finish · Esc to cancel"             style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">⊢</button>
-        <button class="btn small ghost drawer-tool" data-tool="rect"        title="Rectangle — Click-drag to draw rectangle"                                                             style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">▭</button>
-        <button class="btn small ghost drawer-tool" data-tool="circle"      title="Circle / Stirrup — Click-drag to draw ellipse"                                                       style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">◯</button>
-        <button class="btn small ghost drawer-tool" data-tool="text"        title="Annotation — Click canvas to place label"                                                             style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">T</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-aligned" title="Dim: Aligned — Click two points, then click to set offset · measures true distance · O=snap H/V"    style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">↔</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-angular" title="Dim: Angular — Click vertex, then two arm points · measures angle between them"                      style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">∠</button>
-        <button class="btn small ghost drawer-tool" data-tool="dim-leader"  title="Dim: Leader — Click origin, then elbow, then text anchor · places an annotation leader line"         style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">↗</button>
-        <button class="btn small ghost drawer-tool" data-tool="edit-points" title="Edit Points — Drag existing anchor points to reposition them · Click elsewhere to deselect"          style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">✦</button>
+      <div class="tool-bar-wrap">
+        <div class="tool-action-bar" id="toolBtns" role="toolbar" aria-label="Drawing tools">
+
+          <div class="tool-group" data-group="lib">
+            <span class="tg-label">Lib</span>
+            <div class="tool-group-rail">
+              <button class="drawer-tool" data-tool="shapes" title="Quick Shapes — Pick a ready-made bar shape from the library to start from"><span class="t-ico">❖</span><span class="t-lbl">Shapes</span></button>
+            </div>
+          </div>
+
+          <div class="tool-group" data-group="draw">
+            <span class="tg-label">Draw</span>
+            <div class="tool-group-rail">
+              <button class="drawer-tool" data-tool="rebar-path"  title="Rebar Path — Tap to add points · B=toggle Bézier · Double-tap or Enter to finish · Esc to cancel"><span class="t-ico">〽</span><span class="t-lbl">Path</span></button>
+              <button class="drawer-tool" data-tool="ortho-bar"   title="Ortho Bar — Ortho mode: taps snap H/V · Double-tap or Enter to finish · Esc to cancel"><span class="t-ico">⊢</span><span class="t-lbl">Ortho</span></button>
+              <button class="drawer-tool" data-tool="rect"        title="Rectangle — Drag to draw rectangle"><span class="t-ico">▭</span><span class="t-lbl">Rect</span></button>
+              <button class="drawer-tool" data-tool="circle"      title="Circle / Stirrup — Drag to draw ellipse"><span class="t-ico">◯</span><span class="t-lbl">Circle</span></button>
+            </div>
+          </div>
+
+          <div class="tool-group" data-group="view">
+            <span class="tg-label">View</span>
+            <div class="tool-group-rail">
+              <button class="drawer-tool" data-tool="texture" title="Rebar Texture — Choose the ribbed/3D rebar style used for drawn bars"><span class="t-ico">▨</span><span class="t-lbl">Texture</span></button>
+              <button class="drawer-tool" data-tool="grid"    title="Grid — Toggle the snap grid and set its spacing"><span class="t-ico">▦</span><span class="t-lbl">Grid</span></button>
+            </div>
+          </div>
+
+          <div class="tool-group" data-group="note">
+            <span class="tg-label">Note</span>
+            <div class="tool-group-rail">
+              <button class="drawer-tool" data-tool="text"        title="Annotation — Tap canvas to place label"><span class="t-ico">T</span><span class="t-lbl">Text</span></button>
+              <button class="drawer-tool" data-tool="dim-aligned" title="Dim: Aligned — Tap two points, then tap to set offset · measures true distance · O=snap H/V"><span class="t-ico">↔</span><span class="t-lbl">Dim</span></button>
+              <button class="drawer-tool" data-tool="dim-angular" title="Dim: Angular — Tap vertex, then two arm points · measures angle between them"><span class="t-ico">∠</span><span class="t-lbl">Angle</span></button>
+              <button class="drawer-tool" data-tool="dim-leader"  title="Dim: Leader — Tap origin, then elbow, then text anchor · places an annotation leader line"><span class="t-ico">↗</span><span class="t-lbl">Leader</span></button>
+            </div>
+          </div>
+
+          <div class="tool-group" data-group="edit">
+            <span class="tg-label">Edit</span>
+            <div class="tool-group-rail">
+              <button class="drawer-tool" data-tool="edit-points" title="Edit Points — Drag existing anchor points to reposition them · Tap elsewhere to deselect"><span class="t-ico">✦</span><span class="t-lbl">Edit</span></button>
+            </div>
+          </div>
+
+        </div>
       </div>
 
       <!-- Path-tool hint -->
       <div id="pathHint" style="font-size:10px;color:var(--muted);background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:6px;padding:6px 8px;line-height:1.5;display:none">
         <b style="color:var(--brand)" id="pathHintTitle">Drawing…</b><br>
-        <span id="pathHintBody">Click — add point<br>
-        Dbl-click / Enter — finish<br>
+        <span id="pathHintBody">Tap — add point<br>
+        Double-tap / Enter — finish<br>
         Esc — cancel</span>
       </div>
 
-      <div style="height:1px;background:var(--border)"></div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Rebar Style</div>
-      <div style="display:flex;flex-wrap:wrap;gap:3px">
-        ${REBAR_STYLES.map(s=>{const [icon,...rest]=s.label.split(' ');return `<button class="btn small ghost rebar-style-btn" data-style="${s.id}" title="${rest.join(' ')}" style="width:40px;height:36px;font-size:15px;padding:0;text-align:center">${icon}</button>`;}).join('')}
+      <!-- ── CONTEXTUAL PANEL · Bar tools (Path / Ortho / Rect / Circle) ──
+           Shown by setTool() when a bar-drawing tool is active. -->
+      <div class="drawer-panel" id="panel-bar" role="region" aria-label="Bar settings" style="display:none">
+        <div class="drawer-panel-title">〽 Bar Settings</div>
+
+        <div class="dp-sub">Bar Diameter</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" id="drawerBarSize" min="6" max="38" value="16" style="flex:1">
+          <span id="drawerBarVal" style="font-size:11px;min-width:22px;color:var(--brand);font-weight:700">16</span>
+          <span style="font-size:10px;color:var(--muted)">px</span>
+        </div>
+        <div class="dp-hint">Switch to the <b>Texture</b> &amp; <b>Grid</b> tools to change the rebar style and snap grid.</div>
       </div>
 
-      <div style="height:1px;background:var(--border)"></div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Bar Diameter</div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <input type="range" id="drawerBarSize" min="6" max="38" value="16" style="flex:1">
-        <span id="drawerBarVal" style="font-size:11px;min-width:22px;color:var(--brand);font-weight:700">16</span>
-        <span style="font-size:10px;color:var(--muted)">px</span>
+      <!-- ── CONTEXTUAL PANEL · Texture tool ── -->
+      <div class="drawer-panel" id="panel-texture" role="region" aria-label="Rebar texture" style="display:none">
+        <div class="drawer-panel-title">▨ Rebar Texture</div>
+        <div class="dp-hint">Sets the ribbed/3D look applied to bars you draw. Applies to new strokes &amp; quick shapes.</div>
+        <div class="rebar-style-grid">
+          ${REBAR_STYLES.map(s=>{const [icon,...rest]=s.label.split(' ');return `<button class="rebar-style-btn" data-style="${s.id}" title="${rest.join(' ')}"><span class="rs-ico">${icon}</span><span class="rs-lbl">${rest.join(' ')}</span></button>`;}).join('')}
+        </div>
       </div>
 
-      <div style="height:1px;background:var(--border)"></div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Grid</div>
-      <div style="display:flex;align-items:center;gap:7px">
-        <button id="drawerGridToggle" class="btn small ghost" style="font-size:11px;flex:1;text-align:left;padding:5px 8px">
+      <!-- ── CONTEXTUAL PANEL · Grid tool ── -->
+      <div class="drawer-panel" id="panel-grid" role="region" aria-label="Grid settings" style="display:none">
+        <div class="drawer-panel-title">▦ Snap Grid</div>
+        <button id="drawerGridToggle" class="btn small ghost" style="font-size:12px;text-align:left;padding:8px 10px;width:100%">
           ▦ Show Grid
         </button>
-      </div>
-      <div id="drawerGridSpacingRow" style="display:none;flex-direction:column;gap:3px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:10px;color:var(--muted)">Spacing</span>
-          <span style="font-size:11px;color:var(--brand);font-weight:700"><span id="drawerGridSpacingVal">50</span> px</span>
+        <div id="drawerGridSpacingRow" style="display:none;flex-direction:column;gap:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="dp-sub">Spacing</span>
+            <span style="font-size:11px;color:var(--brand);font-weight:700"><span id="drawerGridSpacingVal">50</span> px</span>
+          </div>
+          <input type="range" id="drawerGridSpacing" min="10" max="100" step="5" value="50" style="width:100%;margin:0;display:block">
         </div>
-        <input type="range" id="drawerGridSpacing" min="10" max="100" step="5" value="50" style="width:100%;margin:0;display:block">
       </div>
 
-      <div style="height:1px;background:var(--border)"></div>
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700">Annotation</div>
-      <textarea id="drawerAnnotText" placeholder="Label text, then click canvas…" rows="2"
-        style="font-size:11px;resize:none;border-radius:8px;padding:6px"></textarea>
-      <div style="display:flex;flex-wrap:wrap;gap:3px">
-        ${['A','B','C','D','Ø','90°','135°','Hook','Cover'].map(t=>`<button class="btn small ghost annot-preset" data-text="${t}" style="font-size:10px;padding:2px 5px">${t}</button>`).join('')}
-      </div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:10px;color:var(--muted)">Size</span>
-        <input type="range" id="drawerFontSize" min="8" max="28" value="13" style="flex:1">
-        <span id="drawerFontVal" style="font-size:11px;min-width:18px">13</span>
+      <!-- ── CONTEXTUAL PANEL · Label tools (Text / Dim / Angle / Leader) ──
+           Shown by setTool() when a text- or dimension tool is active. -->
+      <div class="drawer-panel" id="panel-label" role="region" aria-label="Label settings" style="display:none">
+        <div class="drawer-panel-title">T Label Settings</div>
+
+        <div class="dp-sub">Annotation</div>
+        <textarea id="drawerAnnotText" placeholder="Label text, then tap canvas…" rows="2"
+          style="font-size:11px;resize:none;border-radius:8px;padding:6px"></textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:3px">
+          ${['A','B','C','D','Ø','90°','135°','Hook','Cover'].map(t=>`<button class="btn small ghost annot-preset" data-text="${t}" style="font-size:10px;padding:2px 5px">${t}</button>`).join('')}
+        </div>
+
+        <div class="dp-divider"></div>
+        <div class="dp-sub">Font Size</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" id="drawerFontSize" min="8" max="28" value="13" style="flex:1">
+          <span id="drawerFontVal" style="font-size:11px;min-width:18px;color:var(--brand);font-weight:700">13</span>
+          <span style="font-size:10px;color:var(--muted)">px</span>
+        </div>
       </div>
 
-      <div style="height:1px;background:var(--border)"></div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;flex:1">Quick Shapes</span>
-        <button id="loadShapesBtn" class="btn small ghost" style="font-size:9px;padding:2px 6px" title="Manually load a shapes.json file">⤓ Load JSON</button>
-      </div>
-      <div id="quickShapeList" style="display:flex;flex-direction:column;gap:3px">
-        <span style="font-size:10px;color:var(--muted)">Loading…</span>
+      <!-- ── CONTEXTUAL PANEL · Shape library (Shapes tool) ──
+           Shown by setTool() when the quick-shapes tool is active. -->
+      <div class="drawer-panel" id="panel-quick" role="region" aria-label="Shape library" style="display:none">
+        <div class="drawer-panel-title">❖ Shape Library</div>
+        <div class="dp-sub" style="display:flex;align-items:center;gap:6px">
+          <span style="flex:1">Quick Shapes</span>
+          <button id="loadShapesBtn" class="btn small ghost" style="font-size:9px;padding:2px 6px" title="Manually load a shapes.json file">⤓ Load JSON</button>
+        </div>
+        <div class="dp-hint">Tap a preset to drop it on the canvas — then refine with the Draw, Note &amp; Edit tools. Uses the current bar Ø &amp; texture.</div>
+        <div id="quickShapeList" class="quick-shape-grid">
+          <span style="font-size:10px;color:var(--muted)">Loading…</span>
+        </div>
       </div>
     </div>
 
@@ -979,7 +1037,7 @@ const drawerHTML = `
           padding:3px 12px;font-size:11px;color:#22c55e;font-weight:700;pointer-events:none;display:none">
         </div>
         <div style="position:absolute;bottom:7px;right:10px;font-size:10px;color:#bbb;pointer-events:none">
-          <span id="canvasHint">Click=add point · Dbl-click=finish · Esc=cancel · white=print-safe</span>
+          <span id="canvasHint">Tap = add point · Double-tap = finish · Esc = cancel · white = print-safe</span>
         </div>
       </div>
       <div id="drawerActions" style="display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);align-items:center;flex-shrink:0;background:var(--panel)">
@@ -1514,7 +1572,7 @@ function renderGhostFrame(cursorPt) {
 function updateNodeCounter(n) {
   const el=document.getElementById('nodeCounter');
   if(!el)return;
-  if(n>0){el.style.display='block';el.textContent=n===1?'1 point — keep clicking to build path':`${n} points — dbl-click or Enter to finish`;}
+  if(n>0){el.style.display='block';el.textContent=n===1?'1 point — keep tapping to build path':`${n} points — double-tap or Enter to finish`;}
   else el.style.display='none';
 }
 
@@ -1525,8 +1583,8 @@ function showPathHint(on, isOrtho) {
   if(on){
     const titleEl=document.getElementById('pathHintTitle');
     const bodyEl=document.getElementById('pathHintBody');
-    if(isOrtho){if(titleEl)titleEl.textContent='Ortho Drawing…';if(bodyEl)bodyEl.innerHTML='Click — snap H/V point<br>Dbl-click / Enter — finish<br>Esc — cancel';}
-    else{if(titleEl)titleEl.textContent='━ Straight Mode';if(bodyEl)bodyEl.innerHTML='Click — add point<br>Dbl-click / Enter — finish<br><b>B</b> — toggle Bézier curve<br>Esc — cancel';}
+    if(isOrtho){if(titleEl)titleEl.textContent='Ortho Drawing…';if(bodyEl)bodyEl.innerHTML='Tap — snap H/V point<br>Double-tap / Enter — finish<br>Esc — cancel';}
+    else{if(titleEl)titleEl.textContent='━ Straight Mode';if(bodyEl)bodyEl.innerHTML='Tap — add point<br>Double-tap / Enter — finish<br><b>B</b> — toggle Bézier curve<br>Esc — cancel';}
   }
 }
 
@@ -1770,7 +1828,7 @@ function onKeyDown(e) {
   if((e.key==='o'||e.key==='O')&&activeTool==='dim-aligned'){
     dimOrtho=!dimOrtho;
     const hintEl=document.getElementById('canvasHint');
-    if(hintEl)hintEl.textContent=(dimOrtho?'Ortho ON (O): 2nd point snaps H/V · ':'')+'Click 1=start · Click 2=end · Click 3=offset side · Esc=cancel';
+    if(hintEl)hintEl.textContent=(dimOrtho?'Ortho ON (O): 2nd point snaps H/V · ':'')+'Tap 1=start · Tap 2=end · Tap 3=offset side · Esc=cancel';
     if(dimPhase>=1)renderGhostFrame(mousePos);
   }
   if(e.key==='Enter'&&(activeTool==='rebar-path'||activeTool==='ortho-bar')&&isDrawing) commitRebarPath();
@@ -1780,7 +1838,7 @@ function onKeyDown(e) {
     const titleEl=document.getElementById('pathHintTitle');
     const bodyEl=document.getElementById('pathHintBody');
     if(titleEl)titleEl.textContent=bezierMode?'〽 Bézier Mode (B)':'━ Straight Mode (B)';
-    if(bodyEl)bodyEl.innerHTML=(bezierMode?'<b style="color:var(--brand)">Curve</b> — smooth Bézier spline<br>':'<b>Straight</b> — sharp straight segments<br>')+'Click — add point<br>Dbl-click / Enter — finish<br>Esc — cancel';
+    if(bodyEl)bodyEl.innerHTML=(bezierMode?'<b style="color:var(--brand)">Curve</b> — smooth Bézier spline<br>':'<b>Straight</b> — sharp straight segments<br>')+'Tap — add point<br>Double-tap / Enter — finish<br>Esc — cancel';
     renderGhostFrame(mousePos);
   }
 }
@@ -1797,18 +1855,34 @@ function setTool(t) {
     b.style.color=on?'#05131f':'';
     b.style.fontWeight=on?'700':'';
   });
+  /* Reveal the settings relevant to this tool: bar size / texture / grid for the
+     bar-drawing tools, annotation + font size for the text & dimension tools. */
+  const barTools   = ['rebar-path','ortho-bar','rect','circle'];
+  const labelTools = ['text','dim-aligned','dim-angular','dim-leader'];
+  const pBar=document.getElementById('panel-bar'), pLabel=document.getElementById('panel-label');
+  const pQuick=document.getElementById('panel-quick');
+  const pTex=document.getElementById('panel-texture'), pGrid=document.getElementById('panel-grid');
+  const noDraw=['shapes','texture','grid'];
+  if(pBar)   pBar.style.display   = barTools.includes(t)   ? 'flex' : 'none';
+  if(pLabel) pLabel.style.display = labelTools.includes(t) ? 'flex' : 'none';
+  if(pQuick) pQuick.style.display = t==='shapes'           ? 'flex' : 'none';
+  if(pTex)   pTex.style.display   = t==='texture'          ? 'flex' : 'none';
+  if(pGrid)  pGrid.style.display  = t==='grid'             ? 'flex' : 'none';
   const container=document.getElementById('konvaContainer');
-  if(container)container.style.cursor=t==='text'?'text':t==='edit-points'?'default':'crosshair';
+  if(container)container.style.cursor=t==='text'?'text':(t==='edit-points'||noDraw.includes(t))?'default':'crosshair';
   showPathHint(false);
   const hintEl=document.getElementById('canvasHint');
   const hints={
-    'ortho-bar':   'Ortho mode: clicks snap H/V · Dbl-click=finish · Esc=cancel',
+    'ortho-bar':   'Ortho mode: taps snap H/V · Double-tap=finish · Esc=cancel',
     'edit-points': 'Drag blue handles to move points · Esc to deselect · switch tool when done',
-    'dim-aligned': 'Click 1=start · Click 2=end · Click 3=offset side · O=ortho H/V · Esc=cancel',
-    'dim-angular': 'Click 1=vertex · Click 2=arm A · Click 3=arm B · Esc=cancel',
-    'dim-leader':  'Click 1=arrowhead · Click 2=elbow · Click 3=text anchor · Esc=cancel',
+    'dim-aligned': 'Tap 1=start · Tap 2=end · Tap 3=offset side · O=ortho H/V · Esc=cancel',
+    'dim-angular': 'Tap 1=vertex · Tap 2=arm A · Tap 3=arm B · Esc=cancel',
+    'dim-leader':  'Tap 1=arrowhead · Tap 2=elbow · Tap 3=text anchor · Esc=cancel',
+    'shapes':      'Pick a preset from the Shape Library, then refine it with the other tools',
+    'texture':     'Choose a rebar texture — it applies to bars you draw · then pick a Draw tool',
+    'grid':        'Toggle the snap grid and set its spacing · then pick a Draw tool',
   };
-  if(hintEl)hintEl.textContent=hints[t]||'Click=add point · B=toggle Bézier · Dbl-click=finish · Esc=cancel · white=print-safe';
+  if(hintEl)hintEl.textContent=hints[t]||'Tap=add point · B=toggle Bézier · Double-tap=finish · Esc=cancel · white=print-safe';
   if(t === 'edit-points') renderEditHandles();
   else redraw();
 }
@@ -1884,12 +1958,18 @@ function initDrawer() {
   _stageResizeObserver = new ResizeObserver(() => _resizeStage());
   _stageResizeObserver.observe(wrap);
 
-  // Wire Konva stage events (pointer events — no canvas element needed)
+  // Wire Konva stage events. Use unified POINTER events so a single tap = one
+  // point on both mouse and touch. Binding mouse+touch together double-fires on
+  // phones (a tap emits touchstart AND a synthetic mousedown ~300ms later),
+  // which added two points per tap and falsely tripped double-tap-to-finish.
+  // Pointer events fire exactly once per interaction and carry coords on
+  // pointerup; touch-action:none (CSS) stops the browser from scrolling/zooming
+  // or swallowing the double-tap-to-finish gesture.
   const stage = _konvaStage;
-  stage.off('mousedown touchstart mouseup touchend mousemove touchmove dblclick');
-  stage.on('mousedown touchstart', e => { onDown(e.evt); });
-  stage.on('mousemove touchmove',  e => { onMove(e.evt); });
-  stage.on('mouseup touchend',     e => { onUp(e.evt);   });
+  stage.off('mousedown touchstart mouseup touchend mousemove touchmove pointerdown pointermove pointerup dblclick');
+  stage.on('pointerdown', e => { onDown(e.evt); });
+  stage.on('pointermove', e => { onMove(e.evt); });
+  stage.on('pointerup',   e => { onUp(e.evt);   });
 
   document.removeEventListener('keydown', onKeyDown);
   document.addEventListener('keydown', onKeyDown);
@@ -1966,6 +2046,165 @@ function initDrawer() {
    canvas (instead of a 192px side rail that squeezes the canvas to a sliver),
    and let the body scroll. Injected once; overrides the desktop inline styles. */
 const drawerResponsiveCSS = `
+/* ── Canvas: own all touch gestures so tap=add-point, double-tap=finish and
+   drags draw, instead of the browser scrolling / zooming / selecting. ── */
+#konvaContainer, #konvaContainer canvas {
+  touch-action:none; -ms-touch-action:none;
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+}
+
+/* ── Scrollable tool action bar · CAD blueprint palette ───────────────────
+   A horizontal rail of icon chips, clustered into labelled groups (Draw /
+   Note / Edit) split by dashed dimension-line dividers. Scrolls with snap and
+   soft edge fades when the clusters overflow the rail. */
+.tool-bar-wrap { position:relative; width:100%; min-width:0; }
+.tool-bar-wrap::before, .tool-bar-wrap::after {
+  content:""; position:absolute; top:0; bottom:0; width:24px; z-index:3; pointer-events:none;
+  transition:opacity .15s ease;
+}
+.tool-bar-wrap::before { left:0;  background:linear-gradient(90deg, var(--panel) 30%, transparent); }
+.tool-bar-wrap::after  { right:0; background:linear-gradient(270deg, var(--panel) 30%, transparent); }
+.tool-action-bar {
+  display:flex; flex-wrap:nowrap; align-items:stretch; gap:0;
+  overflow-x:auto; overflow-y:hidden;
+  scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch;
+  padding:5px 2px 6px; margin:0; scrollbar-width:none;
+}
+.tool-action-bar::-webkit-scrollbar { height:0; display:none; }
+
+/* ── Tool cluster: a vertical blueprint label tab + its chip rail ── */
+.tool-action-bar .tool-group {
+  flex:0 0 auto; display:flex; align-items:stretch; gap:7px;
+  padding-right:11px; position:relative;
+}
+/* Dashed dimension-line divider between clusters (not after the last). */
+.tool-action-bar .tool-group + .tool-group { padding-left:11px; }
+.tool-action-bar .tool-group:not(:last-child)::after {
+  content:""; position:absolute; right:0; top:4px; bottom:4px;
+  border-right:1.5px dashed color-mix(in srgb, var(--border) 80%, var(--brand));
+  opacity:.7;
+}
+/* Rotated, monospaced cluster caption — reads like a drawing-sheet tab. */
+.tool-action-bar .tg-label {
+  flex:0 0 auto; align-self:center;
+  writing-mode:vertical-rl; transform:rotate(180deg);
+  font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  font-size:8px; font-weight:800; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--muted); user-select:none; padding:1px 0;
+  border-left:2px solid color-mix(in srgb, var(--brand) 55%, transparent);
+}
+.tool-action-bar .tool-group-rail { display:flex; gap:6px; }
+
+.tool-action-bar .drawer-tool {
+  flex:0 0 auto; scroll-snap-align:start; position:relative; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  width:54px; height:52px; padding:5px 3px;
+  border:1px solid var(--border); border-radius:11px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 100%, #fff 4%), var(--panel));
+  color:var(--text); font-family:inherit;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  box-shadow:0 1px 2px rgba(0,0,0,.06), inset 0 1px 0 rgba(255,255,255,.04);
+  transition:transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease;
+}
+/* Faint blueprint corner node on every chip — fills in when active. */
+.tool-action-bar .drawer-tool::before {
+  content:""; position:absolute; top:5px; right:5px; width:4px; height:4px;
+  border-radius:50%; border:1px solid var(--border); background:transparent;
+  transition:background .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+.tool-action-bar .drawer-tool:hover {
+  border-color:var(--brand);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--brand) 9%, var(--panel)), var(--panel));
+  transform:translateY(-1px); box-shadow:0 3px 9px rgba(0,0,0,.12);
+}
+.tool-action-bar .drawer-tool:active { transform:scale(.95); }
+.tool-action-bar .drawer-tool:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.tool-action-bar .t-ico { font-size:17px; line-height:1; }
+.tool-action-bar .t-lbl {
+  font-size:8.5px; font-weight:800; letter-spacing:.03em; text-transform:uppercase;
+  color:var(--muted); line-height:1;
+}
+/* Active tool: setTool() assigns inline background:var(--brand); lift + tint it. */
+.tool-action-bar .drawer-tool[style*="var(--brand)"] {
+  border-color:var(--brand);
+  box-shadow:0 0 0 2px var(--brand), 0 4px 14px color-mix(in srgb, var(--brand) 45%, transparent);
+  transform:translateY(-1px);
+}
+.tool-action-bar .drawer-tool[style*="var(--brand)"]::before {
+  background:#05131f; border-color:#05131f; box-shadow:0 0 0 2px color-mix(in srgb, var(--brand) 60%, #fff);
+}
+.tool-action-bar .drawer-tool[style*="var(--brand)"] .t-lbl { color:#05131f; }
+
+/* ── Tool-contextual control panels (shown by setTool for the active tool) ── */
+.drawer-panel {
+  display:flex; flex-direction:column; gap:8px;
+  border:1px solid var(--border); border-radius:13px;
+  background:var(--panel); padding:11px 11px 12px;
+  box-shadow:0 10px 26px rgba(0,0,0,.20);
+  animation:dpIn .16s cubic-bezier(.2,.7,.3,1);
+}
+@keyframes dpIn { from { opacity:0; transform:translateY(-7px) scale(.99); } to { opacity:1; transform:none; } }
+.drawer-panel-title {
+  display:flex; align-items:center; gap:6px;
+  font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+  color:var(--brand); padding-bottom:7px; border-bottom:1px solid var(--border);
+}
+.drawer-panel .dp-sub {
+  font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; font-weight:700;
+}
+.drawer-panel .dp-divider { height:1px; background:var(--border); margin:2px 0; }
+.drawer-panel .dp-hint {
+  font-size:9.5px; line-height:1.5; color:var(--muted);
+  background:color-mix(in srgb, var(--brand) 7%, transparent);
+  border:1px dashed color-mix(in srgb, var(--brand) 35%, var(--border));
+  border-radius:7px; padding:6px 8px;
+}
+
+/* ── Quick-shape library grid (Shapes tool panel) ── */
+.quick-shape-grid {
+  display:grid; grid-template-columns:repeat(2,1fr); gap:5px;
+  max-height:230px; overflow-y:auto; padding-right:2px;
+}
+.quick-shape-grid .shape-prev-btn {
+  display:flex; align-items:center; gap:6px; text-align:left;
+  padding:7px 8px; border:1px solid var(--border); border-radius:9px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 100%, #fff 4%), var(--panel));
+  color:var(--text); font-family:inherit; font-size:10.5px; font-weight:600;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:transform .1s ease, border-color .1s ease, background .1s ease, box-shadow .1s ease;
+}
+.quick-shape-grid .shape-prev-btn:hover {
+  border-color:var(--brand); transform:translateY(-1px);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--brand) 10%, var(--panel)), var(--panel));
+  box-shadow:0 3px 8px rgba(0,0,0,.12);
+}
+.quick-shape-grid .shape-prev-btn:active { transform:scale(.96); }
+.quick-shape-grid .qs-mark {
+  flex:0 0 auto; font-size:12px; color:var(--brand); line-height:1;
+}
+.quick-shape-grid .qs-name {
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* ── Rebar texture swatch grid (Texture tool panel) ── */
+.rebar-style-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; }
+.rebar-style-grid .rebar-style-btn {
+  display:flex; align-items:center; gap:7px; text-align:left;
+  padding:7px 9px; border:1px solid var(--border); border-radius:9px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 100%, #fff 4%), var(--panel));
+  color:var(--text); font-family:inherit; font-size:10.5px; font-weight:600;
+  cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:transform .1s ease, border-color .1s ease, background .1s ease, box-shadow .1s ease;
+}
+.rebar-style-grid .rebar-style-btn:hover {
+  border-color:var(--brand); transform:translateY(-1px); box-shadow:0 3px 8px rgba(0,0,0,.12);
+}
+.rebar-style-grid .rebar-style-btn:active { transform:scale(.96); }
+.rebar-style-grid .rs-ico { flex:0 0 auto; font-size:16px; line-height:1; }
+.rebar-style-grid .rs-lbl {
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
 @media (max-width: 760px) {
   #shapeDrawerDlg { width:100vw !important; max-width:100vw !important; max-height:100dvh !important; border-radius:0 !important; }
   #shapeDrawerDlg > div { max-height:100dvh !important; }
@@ -1985,11 +2224,20 @@ const drawerResponsiveCSS = `
   /* Each labelled control group becomes a wrap-friendly block, not a full column */
   #drawerSidebar > div[style*="text-transform:uppercase"] { width:100%; }
   #drawerSidebar > div[style*="height:1px"] { display:none; }
-  /* Bigger touch targets for tools / style / preset buttons */
-  #drawerSidebar .drawer-tool, #drawerSidebar .rebar-style-btn { width:44px !important; height:44px !important; font-size:18px !important; }
+  /* Bigger touch targets for the tool action bar + style / preset buttons */
+  .tool-bar-wrap { order:-1; width:100%; }
+  .drawer-panel { width:100%; order:-1; }
+  .tool-action-bar .drawer-tool { width:62px; height:58px; }
+  .tool-action-bar .t-ico { font-size:20px; }
+  .tool-action-bar .t-lbl { font-size:9.5px; }
+  .tool-action-bar .tg-label { font-size:9px; letter-spacing:.18em; }
+  .tool-action-bar .tool-group { padding-right:13px; }
+  .tool-action-bar .tool-group + .tool-group { padding-left:13px; }
   #drawerSidebar .annot-preset { padding:6px 10px !important; font-size:12px !important; }
   #drawerAnnotText { flex:1 1 160px; }
   #quickShapeList { width:100%; }
+  .quick-shape-grid, .rebar-style-grid { grid-template-columns:repeat(3,1fr); max-height:none; }
+  .quick-shape-grid .shape-prev-btn, .rebar-style-grid .rebar-style-btn { font-size:11.5px; padding:9px 9px; }
 }`;
 
 function ensureDrawerModal() {
@@ -2111,7 +2359,7 @@ function populateQuickShapes(){
   const host=document.getElementById('quickShapeList'); if(!host)return;
   const quick=window.SHAPE_LIB_LIST.filter(s=>(s.group||'quick')==='quick');
   if(!quick.length){host.innerHTML='<span style="font-size:10px;color:var(--muted)">No shapes</span>';return;}
-  host.innerHTML=quick.map(s=>`<button class="btn small ghost shape-prev-btn" data-shape="${s.id}" title="${s.label||s.id}" style="font-size:10px;text-align:left;padding:3px 7px">${s.label||s.id}</button>`).join('');
+  host.innerHTML=quick.map(s=>`<button class="shape-prev-btn" data-shape="${s.id}" title="${s.label||s.id}"><span class="qs-mark">❖</span><span class="qs-name">${s.label||s.id}</span></button>`).join('');
   host.querySelectorAll('.shape-prev-btn').forEach(b=>b.addEventListener('click',()=>{
     const def=(window.SHAPE_LIB||{})[b.dataset.shape];
     const cmds=shapeDefToCommands(def, getBarSize(), activeStyle);
