@@ -272,6 +272,9 @@
 
         <div class="shape shape-custom hidden">
           <div class="frow">
+            <div class="fgroup fg-3"><label for="customName">Shape Name (optional)</label><input id="customName" type="text" placeholder="Other shape" tabindex="9" /></div>
+          </div>
+          <div class="frow">
             <div class="fgroup fg-7">
               <span class="flabel">Custom Legs (mm) &amp; Bends (°)</span>
               <div class="subtle">Add legs and bends sequentially. Deductions and hooks are auto-applied.</div>
@@ -304,8 +307,10 @@
           <input id="offsetStart" type="number" min="0" step="1" value="0" tabindex="23" /></div>
         <div class="fgroup fg-1 qty-spacing hidden"><label for="offsetEnd">End offset (mm)</label>
           <input id="offsetEnd" type="number" min="0" step="1" value="0" tabindex="24" /></div>
-        <div class="fgroup fg-3"><label for="remarks">Remarks</label>
-          <input id="remarks" tabindex="25" placeholder="Top bars, crank @ supports…" /></div>
+        <div class="fgroup fg-1" data-tip="Added to cutting length per bar — e.g. lap / development length"><label for="extraLen">Extra / Lap (mm)</label>
+          <input id="extraLen" type="number" min="0" step="1" value="0" tabindex="25" placeholder="0" /></div>
+        <div class="fgroup fg-2"><label for="remarks">Remarks</label>
+          <input id="remarks" tabindex="26" placeholder="Top bars, crank @ supports…" /></div>
       </div>
 
       <!-- ROW 5 — Submit -->

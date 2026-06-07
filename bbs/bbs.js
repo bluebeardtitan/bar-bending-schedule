@@ -418,10 +418,13 @@ $('#barForm').addEventListener('submit', e=>{
     shapeLabel=`Straight 90° hook (${a.ends==='both'?'both ends':a.ends+' end'})`;
   }else if(shape==='custom'){
     const a={items:customItems.filter(x=>x.type!=='deleted'),dia};
-    cl=CL.custom(a); clCalc=CLcalc.custom(a); shapeLabel='Custom';
+    cl=CL.custom(a); clCalc=CLcalc.custom(a); shapeLabel=$('#customName').value.trim()||'Other shape';
   }
 
   if(!isFinite(cl)||cl<=0){ if(window._showFeedback) window._showFeedback('⚠ Check dimensions — CL must be > 0','err'); else alert('Please provide valid dimensions. Cutting length must be > 0.'); return; }
+
+  const extraLen=Number($('#extraLen').value)||0;
+  if(extraLen>0){ cl+=extraLen; clCalc=`${clCalc} + ${fmt0(extraLen)} (extra/lap)`; }
 
   const qty=computeQty(qtyMode,{qty:Number($('#qty').value),spacing:Number($('#spacing').value),span:Number($('#span').value),offsetStart:Number($('#offsetStart').value),offsetEnd:Number($('#offsetEnd').value)});
   if(qty<=0){ if(window._showFeedback) window._showFeedback('⚠ Quantity is zero — check spacing/span','err'); else alert('Quantity is zero. Check inputs or spacing.'); return; }
@@ -439,6 +442,7 @@ $('#barForm').addEventListener('submit', e=>{
   };
 
   // Save raw inputs for edit
+  row.extraLen=extraLen;
   if(shape==='straight'){ row.inputs={len:Number($('#straightLen').value)}; }
   else if(shape==='L'){ row.inputs={A:Number($('#L_A').value),B:Number($('#L_B').value),angle:Number($('#L_angle').value)}; }
   else if(shape==='U'){ row.inputs={A:Number($('#U_A').value),B:Number($('#U_B').value),C:Number($('#U_C').value)}; }
@@ -455,7 +459,7 @@ $('#barForm').addEventListener('submit', e=>{
   else if(shape==='chair'){     row.inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)}; }
   else if(shape==='hook-semi'){ row.inputs={len:Number($('#HS_len').value),ends:$('#HS_ends').value}; }
   else if(shape==='hook-L'){    row.inputs={len:Number($('#HL_len').value),ends:$('#HL_ends').value}; }
-  else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted')}; }
+  else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted'),name:$('#customName').value.trim()}; }
 
   rows.push(row); persist(); render();
   if(window._showFeedback) window._showFeedback(`✔ Added ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
@@ -480,6 +484,7 @@ $('#bbsTable').addEventListener('click', e=>{
     showShape(r.shape);
     $('#dia').value    = r.dia;
     $('#remarks').value= r.remarks||'';
+    $('#extraLen').value= r.extraLen||0;
     $('#grade').value  = r.grade||'Fe 415';
     $('#qtyMode').value= 'manual';
     showQty('manual');
@@ -514,6 +519,7 @@ $('#bbsTable').addEventListener('click', e=>{
     if(r.shape==='hook-L'){    $('#HL_len').value=inp.len||''; $('#HL_ends').value=inp.ends||'both'; }
     if(r.shape==='custom'){
       resetCustom();
+      $('#customName').value=inp.name||'';
       for(const it of (inp.items||[])){ if(it.type==='leg') addLeg(it.len); else if(it.type==='bend') addBend(it.angle,it.hook); }
       updateCustomPreview();
     }
