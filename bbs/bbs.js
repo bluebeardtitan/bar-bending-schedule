@@ -350,7 +350,7 @@ $('#customList').addEventListener('change', e=>{
 $('#customList').addEventListener('click', e=>{
   if(e.target.dataset.remove!==undefined){
     customItems[Number(e.target.dataset.remove)].type='deleted';
-    e.target.closest('.field').remove();
+    e.target.closest('.custom-item').remove();
     updateCustomPreview();
   }
 });
