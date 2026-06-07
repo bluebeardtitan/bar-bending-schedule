@@ -222,6 +222,7 @@ const CLcalc = {
    State & Table
    ========================= */
 let rows = JSON.parse(localStorage.getItem('bbs_rows')||'[]');
+let editIndex = -1;
 render();
 
 function persist(){ localStorage.setItem('bbs_rows', JSON.stringify(rows)); }
@@ -461,8 +462,11 @@ $('#barForm').addEventListener('submit', e=>{
   else if(shape==='hook-L'){    row.inputs={len:Number($('#HL_len').value),ends:$('#HL_ends').value}; }
   else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted'),name:$('#customName').value.trim()}; }
 
-  rows.push(row); persist(); render();
-  if(window._showFeedback) window._showFeedback(`✔ Added ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
+  let verb='Added';
+  if(editIndex>=0 && editIndex<rows.length){ rows[editIndex]=row; verb='Updated'; editIndex=-1; }
+  else { rows.push(row); }
+  persist(); render();
+  if(window._showFeedback) window._showFeedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
   $('#barForm').reset();
   clearShapeUpload();
   showShape('straight'); showQty('manual'); resetCustom(); updateCustomPreview();
@@ -478,10 +482,15 @@ $('#bbsTable').addEventListener('click', e=>{
     const r=rows[Number(del)];
     const label=r?`${r.member||'item'}${r.mark?' ('+r.mark+')':''}`:'this row';
     if(!confirm(`Delete ${label} from the schedule?`)) return;
-    rows.splice(Number(del),1); persist(); render();
+    const di=Number(del);
+    rows.splice(di,1);
+    if(editIndex===di) editIndex=-1;
+    else if(editIndex>di) editIndex--;
+    persist(); render();
   }
   else if(edit!==undefined){
     const i=Number(edit), r=rows[i]; if(!r) return;
+    editIndex=i;
     const inp=r.inputs||{};
     $('#member').value = r.member;
     $('#mark').value   = r.mark||'';
@@ -528,7 +537,8 @@ $('#bbsTable').addEventListener('click', e=>{
       for(const it of (inp.items||[])){ if(it.type==='leg') addLeg(it.len); else if(it.type==='bend') addBend(it.angle,it.hook); }
       updateCustomPreview();
     }
-    rows.splice(i,1); persist(); render();
+    $('#member').focus();
+    $('#member').scrollIntoView({behavior:'smooth',block:'center'});
   }
 });
 
@@ -629,7 +639,7 @@ $('#loadJSON').addEventListener('click',()=>{
     fr.onload=()=>{
       try{
         const data=JSON.parse(fr.result);
-        if(Array.isArray(data.rows))   rows = data.rows;
+        if(Array.isArray(data.rows))   { rows = data.rows; editIndex=-1; }
         if(data.settings)              { settings=data.settings; saveSettings(); }
         if(data.projectInfo)           { projectInfo=Object.assign({},INFO_DEFAULTS,data.projectInfo); applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); }
         persist(); render();
@@ -972,7 +982,7 @@ $('#printBBS').addEventListener('click', async () => {
    Clear all
    ========================= */
 $('#clearAll').addEventListener('click',()=>{
-  if(confirm('Clear the entire schedule?')){ rows=[]; persist(); render(); }
+  if(confirm('Clear the entire schedule?')){ rows=[]; editIndex=-1; persist(); render(); }
 });
 
 /* =========================
