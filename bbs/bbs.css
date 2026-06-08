@@ -340,6 +340,20 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
 #sketchDlgBody{padding:16px;display:flex;align-items:center;justify-content:center;background:#fff}
 #sketchDlgImg{max-width:84vw;max-height:78vh;width:auto;height:auto;object-fit:contain;display:block}
 
+/* Options menu (triple-dot) */
+.options-btn{font-size:18px;line-height:1;padding:2px 8px;letter-spacing:0}
+.options-menu{display:none;position:absolute;right:0;top:100%;z-index:100;
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 8px 30px rgba(0,0,0,.2);padding:6px;min-width:130px;
+  flex-direction:column;gap:2px}
+.options-menu.open{display:flex}
+.options-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;
+  font-size:13px;background:transparent;border:none;border-radius:7px;
+  color:var(--text);cursor:pointer;white-space:nowrap}
+.options-item:hover{background:var(--accent)}
+.options-item.danger{color:#f87171}
+.options-item.danger:hover{background:rgba(248,113,113,.1)}
+
 /* =========================================
    Print
    ========================================= */

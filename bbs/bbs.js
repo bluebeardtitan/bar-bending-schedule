@@ -224,6 +224,8 @@ const CLcalc = {
 let rows = JSON.parse(localStorage.getItem('bbs_rows')||'[]');
 let editIndex = -1;
 let currentPage = (parseInt(localStorage.getItem('bbs_page')) || 1)
+let navPersistTimer = null
+let lastEditedIndex = -1
 const DEFAULT_PAGE_SIZE = 25
 let pageSize = DEFAULT_PAGE_SIZE
 
@@ -296,9 +298,12 @@ function render(){
       <td class="mono right">${fmt3(r.unitWtKgPerM)}</td>
       <td class="mono right">${fmt3(r.totalWtKg)}</td>
       <td>${r.remarks||''}</td>
-      <td class="right">
-        <button class="btn small ghost" data-edit="${idx}" title="Edit">✏️</button>
-        <button class="btn small ghost danger" data-del="${idx}" title="Delete">🗑️</button>
+      <td class="right" style="position:relative">
+        <button class="btn small ghost options-btn" data-idx="${idx}" title="Options">⋮</button>
+        <div class="options-menu" data-idx="${idx}">
+          <button class="options-item" data-edit="${idx}">✏️ Edit</button>
+          <button class="options-item danger" data-del="${idx}">🗑️ Delete</button>
+        </div>
       </td>`;
     tr.dataset.index = idx;
     tr.setAttribute('draggable','true');
@@ -306,6 +311,7 @@ function render(){
   });
   recalcSums();
   renderPagination()
+  updateRecordNav()
   localStorage.setItem('bbs_page', String(currentPage))
 }
 
@@ -502,9 +508,16 @@ $('#barForm').addEventListener('submit', e=>{
   else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted'),name:$('#customName').value.trim()}; }
 
   let verb='Added';
-  if(editIndex>=0 && editIndex<rows.length){ rows[editIndex]=row; verb='Updated'; editIndex=-1; }
+  if(editIndex>=0 && editIndex<rows.length){ lastEditedIndex=editIndex; rows[editIndex]=row; verb='Updated'; editIndex=-1; }
   else { rows.push(row); }
   const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='➕ Add to Schedule';
+  if (verb === 'Updated') {
+    if (navPersistTimer) clearTimeout(navPersistTimer)
+    navPersistTimer = setTimeout(() => {
+      navPersistTimer = null; lastEditedIndex = -1
+      updateRecordNav()
+    }, 5000)
+  }
   persist(); render();
   if(window._showFeedback) window._showFeedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
   $('#barForm').reset();
@@ -515,7 +528,21 @@ $('#barForm').addEventListener('submit', e=>{
 /* =========================
    Edit & Delete
    ========================= */
+function closeOptionsMenus() {
+  document.querySelectorAll('.options-menu.open').forEach(m => m.classList.remove('open'))
+}
+
 $('#bbsTable').addEventListener('click', e=>{
+  const optsBtn = e.target.closest('.options-btn')
+  if (optsBtn) {
+    const idx = optsBtn.dataset.idx
+    const menu = document.querySelector(`.options-menu[data-idx="${idx}"]`)
+    if (menu) {
+      document.querySelectorAll('.options-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open') })
+      menu.classList.toggle('open')
+    }
+    return
+  }
   const del=e.target.dataset.del, edit=e.target.dataset.edit, enlarge=e.target.dataset.enlarge;
   if(enlarge!==undefined){ const r=rows[Number(enlarge)]; if(r&&(r.shapeVec||r.shapeImg)) openSketchLightbox(r); return; }
   if(del!==undefined){
@@ -530,60 +557,103 @@ $('#bbsTable').addEventListener('click', e=>{
     persist(); render();
   }
   else if(edit!==undefined){
-    const i=Number(edit), r=rows[i]; if(!r) return;
-    editIndex=i;
-    if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
-    const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='✏️ Update Schedule';
-    const inp=r.inputs||{};
-    $('#member').value = r.member;
-    $('#mark').value   = r.mark||'';
-    $('#shape').value  = r.shape;
-    showShape(r.shape);
-    $('#dia').value    = r.dia;
-    $('#remarks').value= r.remarks||'';
-    $('#extraLen').value= r.extraLen||0;
-    $('#grade').value  = r.grade||'Fe 415';
-    $('#qtyMode').value= 'manual';
-    showQty('manual');
-    $('#qty').value    = r.qty;
-
-    // Restore shape (vector preferred, raster fallback)
-    if(r.shapeVec || r.shapeImg){
-      currentShapeVec = r.shapeVec || null;
-      currentShapeImg = r.shapeImg || null;
-      currentShapeHist = r.shapeHist || null;
-      $('#shapePreview').src = shapeSrc(r);
-      $('#shapePreview').style.display='block';
-      $('#shapeClearBtn').style.display='inline-flex';
-    }
-    else { clearShapeUpload(); }
-
-    if(r.shape==='straight'){ $('#straightLen').value=inp.len||''; }
-    if(r.shape==='L'){ $('#L_A').value=inp.A||''; $('#L_B').value=inp.B||''; $('#L_angle').value=inp.angle||90; }
-    if(r.shape==='U'){ $('#U_A').value=inp.A||''; $('#U_B').value=inp.B||''; $('#U_C').value=inp.C||''; }
-    if(r.shape==='stirrup'){
-      $('#S_type').value=$('#S_type').value; $('#S_cover').value=inp.cover||25; $('#S_angle').value=inp.angle||135;
-      $('#S_type').dispatchEvent(new Event('change'));
-      if(inp.type==='2'||inp.type==='4'||inp.type==='6'){ $('#S_A').value=inp.A||''; $('#S_B').value=inp.B||''; }
-      else if(inp.type==='circle'){ $('#S_diaCirc').value=inp.diaCirc||''; }
-      else if(inp.type==='diamond'){ $('#S_side').value=inp.side||''; }
-    }
-    if(r.shape==='circle'){  $('#C_dia').value=inp.diaVal||''; $('#C_cover').value=inp.cover||25; }
-    if(r.shape==='spiral'){  $('#SP_dia').value=inp.diaVal||''; $('#SP_pitch').value=inp.pitch||''; $('#SP_turns').value=inp.turns||''; $('#SP_cover').value=inp.cover||25; }
-    if(r.shape==='crank'){   $('#CR_span').value=inp.span||''; $('#CR_depth').value=inp.depth||''; $('#CR_angle').value=inp.angle||45; }
-    if(r.shape==='chair'){     $('#CH_height').value=inp.height||''; $('#CH_top').value=inp.top||''; $('#CH_base').value=inp.base||''; }
-    if(r.shape==='hook-semi'){ $('#HS_len').value=inp.len||''; $('#HS_ends').value=inp.ends||'both'; }
-    if(r.shape==='hook-L'){    $('#HL_len').value=inp.len||''; $('#HL_ends').value=inp.ends||'both'; }
-    if(r.shape==='custom'){
-      resetCustom();
-      $('#customName').value=inp.name||'';
-      for(const it of (inp.items||[])){ if(it.type==='leg') addLeg(it.len); else if(it.type==='bend') addBend(it.angle,it.hook); }
-      updateCustomPreview();
-    }
-    $('#member').focus();
-    $('#member').scrollIntoView({behavior:'smooth',block:'center'});
+    closeOptionsMenus()
+    loadRow(Number(edit))
   }
 });
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.options-menu') && !e.target.closest('.options-btn')) {
+    closeOptionsMenus()
+  }
+})
+
+/* =========================
+   Record navigation (prev/next in add bar)
+   ========================= */
+function loadRow(i) {
+  const r = rows[i]
+  if (!r) return
+  editIndex = i
+  if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
+  const submitBtn = document.querySelector('.submit-btn')
+  if (submitBtn) submitBtn.textContent = '✏️ Update Schedule'
+  const inp = r.inputs || {}
+  $('#member').value = r.member
+  $('#mark').value   = r.mark||''
+  $('#shape').value  = r.shape
+  showShape(r.shape)
+  $('#dia').value    = r.dia
+  $('#remarks').value= r.remarks||''
+  $('#extraLen').value = r.extraLen||0
+  $('#grade').value  = r.grade||'Fe 415'
+  $('#qtyMode').value = 'manual'
+  showQty('manual')
+  $('#qty').value    = r.qty
+
+  if (r.shapeVec || r.shapeImg) {
+    currentShapeVec = r.shapeVec || null
+    currentShapeImg = r.shapeImg || null
+    currentShapeHist = r.shapeHist || null
+    $('#shapePreview').src = shapeSrc(r)
+    $('#shapePreview').style.display = 'block'
+    $('#shapeClearBtn').style.display = 'inline-flex'
+  } else {
+    clearShapeUpload()
+  }
+
+  if (r.shape === 'straight') { $('#straightLen').value = inp.len||'' }
+  if (r.shape === 'L') { $('#L_A').value = inp.A||''; $('#L_B').value = inp.B||''; $('#L_angle').value = inp.angle||90 }
+  if (r.shape === 'U') { $('#U_A').value = inp.A||''; $('#U_B').value = inp.B||''; $('#U_C').value = inp.C||'' }
+  if (r.shape === 'stirrup') {
+    $('#S_type').value = $('#S_type').value; $('#S_cover').value = inp.cover||25; $('#S_angle').value = inp.angle||135
+    $('#S_type').dispatchEvent(new Event('change'))
+    if (inp.type === '2'||inp.type === '4'||inp.type === '6') { $('#S_A').value = inp.A||''; $('#S_B').value = inp.B||'' }
+    else if (inp.type === 'circle') { $('#S_diaCirc').value = inp.diaCirc||'' }
+    else if (inp.type === 'diamond') { $('#S_side').value = inp.side||'' }
+  }
+  if (r.shape === 'circle')  { $('#C_dia').value = inp.diaVal||''; $('#C_cover').value = inp.cover||25 }
+  if (r.shape === 'spiral')  { $('#SP_dia').value = inp.diaVal||''; $('#SP_pitch').value = inp.pitch||''; $('#SP_turns').value = inp.turns||''; $('#SP_cover').value = inp.cover||25 }
+  if (r.shape === 'crank')   { $('#CR_span').value = inp.span||''; $('#CR_depth').value = inp.depth||''; $('#CR_angle').value = inp.angle||45 }
+  if (r.shape === 'chair')   { $('#CH_height').value = inp.height||''; $('#CH_top').value = inp.top||''; $('#CH_base').value = inp.base||'' }
+  if (r.shape === 'hook-semi') { $('#HS_len').value = inp.len||''; $('#HS_ends').value = inp.ends||'both' }
+  if (r.shape === 'hook-L')  { $('#HL_len').value = inp.len||''; $('#HL_ends').value = inp.ends||'both' }
+  if (r.shape === 'custom') {
+    resetCustom()
+    $('#customName').value = inp.name||''
+    for (const it of (inp.items||[])) { if (it.type === 'leg') addLeg(it.len); else if (it.type === 'bend') addBend(it.angle, it.hook) }
+    updateCustomPreview()
+  }
+  updateRecordNav()
+  $('#member').focus()
+  $('#member').scrollIntoView({behavior:'smooth',block:'center'})
+}
+
+function navRecord(dir) {
+  if (!rows.length) return
+  if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
+  let base = editIndex >= 0 ? editIndex : lastEditedIndex
+  let target = base + dir
+  if (target < 0) target = 0
+  if (target >= rows.length) target = rows.length - 1
+  loadRow(target)
+}
+
+function updateRecordNav() {
+  const btns = document.querySelector('.nav-record-btns')
+  if (!btns) return
+  if (editIndex < 0 && !navPersistTimer) { btns.style.display = 'none'; return }
+  btns.style.display = 'inline-flex'
+  btns.style.alignItems = 'center'
+  btns.style.gap = '2px'
+  const idx = editIndex >= 0 ? editIndex : lastEditedIndex
+  $('#prevRecord').disabled = idx <= 0
+  $('#nextRecord').disabled = idx >= rows.length - 1
+  $('#recordNavInfo').textContent = `${idx + 1} / ${rows.length}`
+}
+
+$('#prevRecord').addEventListener('click', () => navRecord(-1))
+$('#nextRecord').addEventListener('click', () => navRecord(+1))
 
 /* =========================
    Settings controls

@@ -967,14 +967,6 @@ const drawerHTML = `
         </div>
       </div>
 
-      <!-- Path-tool hint -->
-      <div id="pathHint" style="font-size:10px;color:var(--muted);background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:6px;padding:6px 8px;line-height:1.5;display:none">
-        <b style="color:var(--brand)" id="pathHintTitle">Drawing…</b><br>
-        <span id="pathHintBody">Tap — add point<br>
-        Double-tap / Enter — finish<br>
-        Esc — cancel</span>
-      </div>
-
       <!-- ── CONTEXTUAL PANEL · Bar tools (Path / Ortho / Rect / Circle) ──
            Shown by setTool() when a bar-drawing tool is active. -->
       <div class="drawer-panel" id="panel-bar" role="region" aria-label="Bar settings" style="display:none">
@@ -1624,15 +1616,7 @@ function updateNodeCounter(n) {
 }
 
 function showPathHint(on, isOrtho) {
-  const el=document.getElementById('pathHint');
-  if(!el)return;
-  el.style.display=on?'block':'none';
-  if(on){
-    const titleEl=document.getElementById('pathHintTitle');
-    const bodyEl=document.getElementById('pathHintBody');
-    if(isOrtho){if(titleEl)titleEl.textContent='Ortho Drawing…';if(bodyEl)bodyEl.innerHTML='Tap — snap H/V point<br>Double-tap / Enter — finish<br><b>F</b> — toggle fillet 0/saved<br>Esc — cancel';}
-    else{if(titleEl)titleEl.textContent='━ Straight Mode';if(bodyEl)bodyEl.innerHTML='Tap — add point<br>Double-tap / Enter — finish<br><b>B</b> — toggle Bézier curve<br>Esc — cancel';}
-  }
+  // path hint removed — canvasHint at canvas bottom provides tool guidance
 }
 
 function commitRebarPath() {
@@ -1963,11 +1947,7 @@ function onKeyDown(e) {
   }
   if((e.key==='b'||e.key==='B')&&activeTool==='rebar-path'&&isDrawing){
     bezierMode=!bezierMode;
-    bezierStartIdx=bezierMode?livePts.length-1:-1;
-    const titleEl=document.getElementById('pathHintTitle');
-    const bodyEl=document.getElementById('pathHintBody');
-    if(titleEl)titleEl.textContent=bezierMode?'〽 Bézier Mode (B)':'━ Straight Mode (B)';
-    if(bodyEl)bodyEl.innerHTML=(bezierMode?'<b style="color:var(--brand)">Curve</b> — smooth Bézier spline<br>':'<b>Straight</b> — sharp straight segments<br>')+'Tap — add point<br>Double-tap / Enter — finish<br>Esc — cancel';
+    bezierStartIdx=bezierMode?Math.max(1,livePts.length-2):-1;
     renderGhostFrame(mousePos);
   }
 }

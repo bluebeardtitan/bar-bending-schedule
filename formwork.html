@@ -205,6 +205,11 @@
             <div class="fgroup fg-2"><label for="X_perim">Shutter Perimeter (m)</label><input id="X_perim" type="number" min="0" step="0.001" tabindex="11" placeholder="e.g. 1.50" /></div>
             <div class="fgroup fg-3"><label for="X_name">Section Name (optional)</label><input id="X_name" type="text" placeholder="Custom section" tabindex="12" /></div>
           </div>
+          <div class="frow">
+            <div class="fgroup fg-2"><label for="X_areaCalc">Area Calc (optional)</label><input id="X_areaCalc" type="text" placeholder="e.g. 0.3 × 0.45" tabindex="13" /></div>
+            <div class="fgroup fg-2"><label for="X_perimCalc">Perimeter Calc (optional)</label><input id="X_perimCalc" type="text" placeholder="e.g. 2×(0.3+0.45)" tabindex="14" /></div>
+            <div class="fgroup fg-3"></div>
+          </div>
         </div>
       </div>
 
@@ -230,6 +235,11 @@
       <div class="toolbar form-actions">
         <button class="btn primary submit-btn" type="submit" tabindex="30">➕ Add to Schedule</button>
         <button id="reset" type="button" class="btn ghost" tabindex="31">↺ Reset</button>
+        <span class="nav-record-btns" style="display:none">
+          <button type="button" id="prevRecord" class="btn small ghost" tabindex="-1" title="Previous record">◀</button>
+          <button type="button" id="nextRecord" class="btn small ghost" tabindex="-1" title="Next record">▶</button>
+          <span id="recordNavInfo" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:0 2px">0 / 0</span>
+        </span>
         <div class="space"></div>
         <span id="formFeedback" class="form-feedback" aria-live="polite"></span>
       </div>

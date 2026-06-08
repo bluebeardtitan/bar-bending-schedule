@@ -165,9 +165,11 @@ function sectionGeom(section, d){
   }
   // custom: area in m², perimeter in m
   const area = m(d.area), perim = m(d.perim);
+  const areaPart = d.areaCalc ? `(${d.areaCalc})` : fmtL(area)
+  const perimPart = d.perimCalc ? `(${d.perimCalc})` : fmtL(perim)
   return {
     areaMm2: area * 1e6,
-    dimsLabel: `A ${fmtL(area)} m² · P ${fmtL(perim)} m`,
+    dimsLabel: `A ${areaPart} m² · P ${perimPart} m`,
     sectionLabel: (d.name || 'Custom'),
     fwModes: [
       { id:'full', label:'Entered perimeter', Ps: perim * 1000 },
@@ -202,7 +204,7 @@ function readDims(){
   if (section === 'circle')    return { dia:$('#C_dia').value };
   if (section === 'tbeam')     return { bf:$('#T_bf').value, hf:$('#T_hf').value, bw:$('#T_bw').value, D:$('#T_D').value };
   if (section === 'trapezoid') return { a:$('#Z_a').value, b:$('#Z_b').value, h:$('#Z_h').value };
-  return { area:$('#X_area').value, perim:$('#X_perim').value, name:$('#X_name').value.trim() };
+  return { area:$('#X_area').value, perim:$('#X_perim').value, name:$('#X_name').value.trim(), areaCalc:$('#X_areaCalc').value.trim(), perimCalc:$('#X_perimCalc').value.trim() };
 }
 function updateFwModes(preferId){
   const geom = sectionGeom($('#section').value, readDims());
@@ -242,8 +244,12 @@ function computeEntry(){
   const volM3 = areaM2 * L * nos;
   const fwM2  = (psM * L + endArea) * nos;
 
-  const volCalc = `${fmt4(areaM2)} ${TIMES} ${fmtL(L)} ${TIMES} ${nos} = ${fmt3(volM3)}`;
-  const fwCalc  = `${fmt3(psM)} ${TIMES} ${fmtL(L)}${endArea ? ` + ${fmt3(endArea)}` : ''} ${TIMES} ${nos} = ${fmt3(fwM2)}`;
+  const volCalc = dims.areaCalc
+    ? `(${dims.areaCalc}) ${TIMES} ${fmtL(L)} ${TIMES} ${nos} = ${fmt3(volM3)}`
+    : `${fmt4(areaM2)} ${TIMES} ${fmtL(L)} ${TIMES} ${nos} = ${fmt3(volM3)}`
+  const fwCalc  = dims.perimCalc
+    ? `(${dims.perimCalc}) ${TIMES} ${fmtL(L)}${endArea ? ` + ${fmt3(endArea)}` : ''} ${TIMES} ${nos} = ${fmt3(fwM2)}`
+    : `${fmt3(psM)} ${TIMES} ${fmtL(L)}${endArea ? ` + ${fmt3(endArea)}` : ''} ${TIMES} ${nos} = ${fmt3(fwM2)}`
 
   return {
     section, dims, geom, areaM2, lengthM:L, nos,
@@ -258,7 +264,7 @@ function updatePreview(){
   $('#volPreview').textContent  = fmt3(e.volM3);
   $('#fwPreview').textContent   = fmt3(e.fwM2);
 }
-['#R_B','#R_D','#C_dia','#T_bf','#T_hf','#T_bw','#T_D','#Z_a','#Z_b','#Z_h','#X_area','#X_perim']
+['#R_B','#R_D','#C_dia','#T_bf','#T_hf','#T_bw','#T_D','#Z_a','#Z_b','#Z_h','#X_area','#X_perim','#X_areaCalc','#X_perimCalc']
   .forEach(id => $(id).addEventListener('input', () => { updateFwModes(); updatePreview(); }));
 ['#length','#nos','#fwMode','#fwEnds'].forEach(id => $(id).addEventListener('input', updatePreview));
 
@@ -268,6 +274,8 @@ function updatePreview(){
 let rows = JSON.parse(localStorage.getItem('cfs_rows') || '[]');
 let editIndex = -1;
 let currentPage = (parseInt(localStorage.getItem('cfs_page')) || 1)
+let navPersistTimer = null
+let lastEditedIndex = -1
 const DEFAULT_PAGE_SIZE = 25
 let pageSize = DEFAULT_PAGE_SIZE
 function persist(){ localStorage.setItem('cfs_rows', JSON.stringify(rows)); }
@@ -365,9 +373,12 @@ function render(){
       <td class="mono" style="font-size:11px;line-height:1.4;min-width:130px">${escapeHTML(r.fwCalc)}</td>
       <td class="mono right">${fmt3(r.fwM2)}</td>
       <td>${escapeHTML(r.remarks||'')}</td>
-      <td class="right">
-        <button class="btn small ghost" data-edit="${idx}" title="Edit">✏️</button>
-        <button class="btn small ghost danger" data-del="${idx}" title="Delete">🗑️</button>
+      <td class="right" style="position:relative">
+        <button class="btn small ghost options-btn" data-idx="${idx}" title="Options">⋮</button>
+        <div class="options-menu" data-idx="${idx}">
+          <button class="options-item" data-edit="${idx}">✏️ Edit</button>
+          <button class="options-item danger" data-del="${idx}">🗑️ Delete</button>
+        </div>
       </td>`;
     tr.dataset.index = idx;
     tr.setAttribute('draggable','true');
@@ -376,6 +387,7 @@ function render(){
   recalcSums();
   renderSummary();
   renderPagination()
+  updateRecordNav()
   localStorage.setItem('cfs_page', String(currentPage))
 }
 
@@ -433,9 +445,16 @@ $('#memberForm').addEventListener('submit', e => {
   };
 
   let verb = 'Added';
-  if (editIndex >= 0 && editIndex < rows.length) { rows[editIndex] = row; verb = 'Updated'; editIndex = -1; }
+  if (editIndex >= 0 && editIndex < rows.length) { lastEditedIndex = editIndex; rows[editIndex] = row; verb = 'Updated'; editIndex = -1; }
   else rows.push(row);
   const submitBtn = document.querySelector('.submit-btn'); if (submitBtn) submitBtn.textContent = '➕ Add to Schedule';
+  if (verb === 'Updated') {
+    if (navPersistTimer) clearTimeout(navPersistTimer)
+    navPersistTimer = setTimeout(() => {
+      navPersistTimer = null; lastEditedIndex = -1
+      updateRecordNav()
+    }, 5000)
+  }
   persist(); render();
   feedback(`✔ ${verb} ${row.member} · ${fmt3(row.volM3)} m³ · ${fmt3(row.fwM2)} m² formwork`, 'ok');
 
@@ -451,7 +470,21 @@ $('#reset').addEventListener('click', () => location.reload());
 /* =========================
    Edit & Delete
    ========================= */
+function closeOptionsMenus() {
+  document.querySelectorAll('.options-menu.open').forEach(m => m.classList.remove('open'))
+}
+
 $('#bbsTable').addEventListener('click', e => {
+  const optsBtn = e.target.closest('.options-btn')
+  if (optsBtn) {
+    const idx = optsBtn.dataset.idx
+    const menu = document.querySelector(`.options-menu[data-idx="${idx}"]`)
+    if (menu) {
+      document.querySelectorAll('.options-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open') })
+      menu.classList.toggle('open')
+    }
+    return
+  }
   const del = e.target.dataset.del, edit = e.target.dataset.edit, enlarge = e.target.dataset.enlarge;
   if (enlarge !== undefined) { const r = rows[Number(enlarge)]; if (r && (r.shapeVec||r.shapeImg)) openSketchLightbox(r); return; }
   if (del !== undefined) {
@@ -465,42 +498,85 @@ $('#bbsTable').addEventListener('click', e => {
     else if (editIndex > di) editIndex--;
     persist(); render();
   } else if (edit !== undefined) {
-    const i = Number(edit), r = rows[i]; if (!r) return;
-    editIndex = i;
-    if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
-    const submitBtn = document.querySelector('.submit-btn'); if (submitBtn) submitBtn.textContent = '✏️ Update Schedule';
-    $('#member').value  = r.member;
-    $('#mark').value    = r.mark || '';
-    $('#element').value  = r.element || 'Column';
-    $('#grade').value   = r.grade || settings.defaultGrade;
-    $('#section').value = r.section;
-    showShape(r.section);
-    const d = (r.inputs && r.inputs.dims) || {};
-    if (r.section === 'rect')      { $('#R_B').value=d.B||''; $('#R_D').value=d.D||''; }
-    if (r.section === 'circle')    { $('#C_dia').value=d.dia||''; }
-    if (r.section === 'tbeam')     { $('#T_bf').value=d.bf||''; $('#T_hf').value=d.hf||''; $('#T_bw').value=d.bw||''; $('#T_D').value=d.D||''; }
-    if (r.section === 'trapezoid') { $('#Z_a').value=d.a||''; $('#Z_b').value=d.b||''; $('#Z_h').value=d.h||''; }
-    if (r.section === 'custom')    { $('#X_area').value=d.area||''; $('#X_perim').value=d.perim||''; $('#X_name').value=d.name||''; }
-    updateFwModes(r.fwModeId);
-    $('#length').value = r.lengthM;
-    $('#nos').value    = r.nos;
-    $('#fwEnds').checked = !!r.ends;
-    $('#remarks').value = r.remarks || '';
-
-    if (r.shapeVec || r.shapeImg) {
-      currentShapeVec  = r.shapeVec  || null;
-      currentShapeImg  = r.shapeImg  || null;
-      currentShapeHist = r.shapeHist || null;
-      $('#shapePreview').src = shapeSrc(r);
-      $('#shapePreview').style.display = 'block';
-      $('#shapeClearBtn').style.display = 'inline-flex';
-    } else clearShapeUpload();
-
-    updatePreview();
-    $('#member').focus();
-    $('#member').scrollIntoView({ behavior:'smooth', block:'center' });
+    closeOptionsMenus()
+    loadRow(Number(edit))
   }
 });
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.options-menu') && !e.target.closest('.options-btn')) {
+    closeOptionsMenus()
+  }
+})
+
+/* =========================
+   Record navigation (prev/next in add bar)
+   ========================= */
+function loadRow(i) {
+  const r = rows[i]
+  if (!r) return
+  editIndex = i
+  if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
+  const submitBtn = document.querySelector('.submit-btn')
+  if (submitBtn) submitBtn.textContent = '✏️ Update Schedule'
+  $('#member').value  = r.member
+  $('#mark').value    = r.mark || ''
+  $('#element').value = r.element || 'Column'
+  $('#grade').value   = r.grade || settings.defaultGrade
+  $('#section').value = r.section
+  showShape(r.section)
+  const d = (r.inputs && r.inputs.dims) || {}
+  if (r.section === 'rect')      { $('#R_B').value = d.B||''; $('#R_D').value = d.D||'' }
+  if (r.section === 'circle')    { $('#C_dia').value = d.dia||'' }
+  if (r.section === 'tbeam')     { $('#T_bf').value = d.bf||''; $('#T_hf').value = d.hf||''; $('#T_bw').value = d.bw||''; $('#T_D').value = d.D||'' }
+  if (r.section === 'trapezoid') { $('#Z_a').value = d.a||''; $('#Z_b').value = d.b||''; $('#Z_h').value = d.h||'' }
+  if (r.section === 'custom')    { $('#X_area').value = d.area||''; $('#X_perim').value = d.perim||''; $('#X_name').value = d.name||''; $('#X_areaCalc').value = d.areaCalc||''; $('#X_perimCalc').value = d.perimCalc||'' }
+  updateFwModes(r.fwModeId)
+  $('#length').value = r.lengthM
+  $('#nos').value    = r.nos
+  $('#fwEnds').checked = !!r.ends
+  $('#remarks').value = r.remarks || ''
+
+  if (r.shapeVec || r.shapeImg) {
+    currentShapeVec  = r.shapeVec  || null
+    currentShapeImg  = r.shapeImg  || null
+    currentShapeHist = r.shapeHist || null
+    $('#shapePreview').src = shapeSrc(r)
+    $('#shapePreview').style.display = 'block'
+    $('#shapeClearBtn').style.display = 'inline-flex'
+  } else clearShapeUpload()
+
+  updatePreview()
+  updateRecordNav()
+  $('#member').focus()
+  $('#member').scrollIntoView({ behavior:'smooth', block:'center' })
+}
+
+function navRecord(dir) {
+  if (!rows.length) return
+  if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
+  let base = editIndex >= 0 ? editIndex : lastEditedIndex
+  let target = base + dir
+  if (target < 0) target = 0
+  if (target >= rows.length) target = rows.length - 1
+  loadRow(target)
+}
+
+function updateRecordNav() {
+  const btns = document.querySelector('.nav-record-btns')
+  if (!btns) return
+  if (editIndex < 0 && !navPersistTimer) { btns.style.display = 'none'; return }
+  btns.style.display = 'inline-flex'
+  btns.style.alignItems = 'center'
+  btns.style.gap = '2px'
+  const idx = editIndex >= 0 ? editIndex : lastEditedIndex
+  $('#prevRecord').disabled = idx <= 0
+  $('#nextRecord').disabled = idx >= rows.length - 1
+  $('#recordNavInfo').textContent = `${idx + 1} / ${rows.length}`
+}
+
+$('#prevRecord').addEventListener('click', () => navRecord(-1))
+$('#nextRecord').addEventListener('click', () => navRecord(+1))
 
 /* =========================
    CSV Export
