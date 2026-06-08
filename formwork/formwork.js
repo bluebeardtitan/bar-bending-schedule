@@ -267,6 +267,9 @@ function updatePreview(){
    ========================= */
 let rows = JSON.parse(localStorage.getItem('cfs_rows') || '[]');
 let editIndex = -1;
+let currentPage = (parseInt(localStorage.getItem('cfs_page')) || 1)
+const DEFAULT_PAGE_SIZE = 25
+let pageSize = DEFAULT_PAGE_SIZE
 function persist(){ localStorage.setItem('cfs_rows', JSON.stringify(rows)); }
 
 function shapeSrc(r){
@@ -279,6 +282,35 @@ function recalcSums(){
   $('#sumVol').textContent = fmt3(totVol);
   $('#sumFw').textContent  = fmt3(totFw);
   $('#countBadge').textContent = `${rows.length} item${rows.length!==1?'s':''}`;
+}
+function getPageCount() {
+  if (!pageSize || pageSize <= 0) return 1
+  return Math.max(1, Math.ceil(rows.length / pageSize))
+}
+function getPageRows() {
+  if (!pageSize || pageSize <= 0) return rows
+  const start = (currentPage - 1) * pageSize
+  return rows.slice(start, start + pageSize)
+}
+function clampPage() {
+  if (!pageSize || pageSize <= 0) { currentPage = 1; return }
+  const max = getPageCount()
+  if (currentPage > max) currentPage = max
+  if (currentPage < 1) currentPage = 1
+}
+function renderPagination() {
+  const el = $('#paginationControls')
+  if (!el) return
+  if (!pageSize || pageSize <= 0 || rows.length <= pageSize) {
+    el.style.display = 'none'
+    return
+  }
+  el.style.display = 'inline-flex'
+  el.style.alignItems = 'center'
+  el.style.gap = '4px'
+  $('#pageInfo').textContent = `Page ${currentPage} of ${getPageCount()}`
+  $('#prevPage').disabled = currentPage <= 1
+  $('#nextPage').disabled = currentPage >= getPageCount()
 }
 function gradeSummary(){
   const map = {};
@@ -309,16 +341,20 @@ function renderSummary(){
 }
 function render(){
   const tbody = $('#tbody'); tbody.innerHTML = '';
-  rows.forEach((r,i) => {
+  clampPage()
+  const pageRows = getPageRows()
+  const offset = pageSize > 0 ? (currentPage - 1) * pageSize : 0
+  pageRows.forEach((r,i) => {
+    const idx = offset + i
     const src = shapeSrc(r);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td class="mono">${i+1}</td>
+      <td class="mono">${idx+1}</td>
       <td>${escapeHTML(r.member)}</td>
       <td>${escapeHTML(r.element||'')}</td>
       <td>${escapeHTML(r.sectionLabel)}</td>
       <td style="text-align:center;padding:4px 6px">${src
-        ? `<img src="${src}" alt="section" class="sketch-thumb" data-enlarge="${i}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
+        ? `<img src="${src}" alt="section" class="sketch-thumb" data-enlarge="${idx}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
         : '<span class="subtle">—</span>'}</td>
       <td class="mono" style="font-size:11px">${escapeHTML(r.dimsLabel)}</td>
       <td class="mono right">${fmtL(r.lengthM)}</td>
@@ -330,15 +366,17 @@ function render(){
       <td class="mono right">${fmt3(r.fwM2)}</td>
       <td>${escapeHTML(r.remarks||'')}</td>
       <td class="right">
-        <button class="btn small ghost" data-edit="${i}" title="Edit">✏️</button>
-        <button class="btn small ghost danger" data-del="${i}" title="Delete">🗑️</button>
+        <button class="btn small ghost" data-edit="${idx}" title="Edit">✏️</button>
+        <button class="btn small ghost danger" data-del="${idx}" title="Delete">🗑️</button>
       </td>`;
-    tr.dataset.index = i;
+    tr.dataset.index = idx;
     tr.setAttribute('draggable','true');
     tbody.appendChild(tr);
   });
   recalcSums();
   renderSummary();
+  renderPagination()
+  localStorage.setItem('cfs_page', String(currentPage))
 }
 
 /* =========================
@@ -422,12 +460,14 @@ $('#bbsTable').addEventListener('click', e => {
     if (!confirm(`Delete ${label} from the schedule?`)) return;
     const di = Number(del);
     rows.splice(di,1);
+    clampPage()
     if (editIndex === di) editIndex = -1;
     else if (editIndex > di) editIndex--;
     persist(); render();
   } else if (edit !== undefined) {
     const i = Number(edit), r = rows[i]; if (!r) return;
     editIndex = i;
+    if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
     const submitBtn = document.querySelector('.submit-btn'); if (submitBtn) submitBtn.textContent = '✏️ Update Schedule';
     $('#member').value  = r.member;
     $('#mark').value    = r.mark || '';
@@ -915,6 +955,42 @@ $('#printBBS').addEventListener('click', async () => {
 });
 
 /* =========================
+   Pagination controls
+   ========================= */
+function initPagination() {
+  if ($('#paginationControls')) return
+  const el = document.createElement('span')
+  el.id = 'paginationControls'
+  el.style.display = 'none'
+  el.innerHTML = `
+    <button class="btn small ghost" id="prevPage" title="Previous page">◀</button>
+    <span id="pageInfo" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px">Page 1 of 1</span>
+    <button class="btn small ghost" id="nextPage" title="Next page">▶</button>
+    <select id="pageSizeSelect" style="width:auto;padding:3px 5px;font-size:11px;margin-left:2px">
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="0">All</option>
+    </select>
+  `
+  const badge = $('#countBadge')
+  if (badge && badge.parentNode) {
+    badge.after(el)
+  }
+  $('#prevPage').addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; render() }
+  })
+  $('#nextPage').addEventListener('click', () => {
+    if (currentPage < getPageCount()) { currentPage++; render() }
+  })
+  $('#pageSizeSelect').addEventListener('change', e => {
+    pageSize = Number(e.target.value)
+    currentPage = 1
+    render()
+  })
+}
+
+/* =========================
    Light / Dark Theme Toggle  (shared key with BBS)
    ========================= */
 (function(){
@@ -969,4 +1045,5 @@ $('#grade').value = settings.defaultGrade;
 showShape($('#section').value);
 updateFwModes();
 updatePreview();
+initPagination();
 render();
