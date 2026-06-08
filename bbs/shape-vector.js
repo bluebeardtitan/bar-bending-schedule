@@ -106,7 +106,9 @@
     const mlw = lw => Math.max(0.15, (lw != null ? lw : 1.4) * scale);
 
     const hex = c => {
-      const m = /^#?([0-9a-f]{6})$/i.exec(c || '');
+      let s = (c || '').replace('#', '');
+      if (s.length === 3) s = s[0]+s[0] + s[1]+s[1] + s[2]+s[2];   // expand #fff → #ffffff
+      const m = /^([0-9a-f]{6})$/i.exec(s);
       if (!m) return [31, 31, 31];
       const n = parseInt(m[1], 16);
       return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -161,7 +163,13 @@
           break;
         }
         case 'text': {
-          const pt = Math.max(3, (e.sz || 11) * scale / MM_PER_PT);
+          // Scale the font proportionally with the rest of the drawing so the
+          // label stays matched to its (also-scaled) white knockout box, offset
+          // and dim geometry. A hard minimum (e.g. 3pt) breaks that proportion
+          // on heavily-fitted sketches — the clamped text overflows its box and
+          // looks off-centre/"pushed around". Keep only a tiny floor so the size
+          // never hits 0.
+          const pt = Math.max(0.5, (e.sz || 11) * scale / MM_PER_PT);
           pdf.setFontSize(pt);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(r, g, b);

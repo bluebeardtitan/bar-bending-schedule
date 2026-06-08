@@ -32,9 +32,10 @@ header{
 .brand{display:flex;gap:10px;align-items:center}
 .logo{
   width:36px;height:36px;border-radius:9px;flex-shrink:0;
-  background:radial-gradient(circle at 30% 30%,var(--brand),var(--brand-2));
-  box-shadow:0 0 0 2px #131720;
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px;line-height:1;
 }
+.logo::before{content:"🔩"}
 h1{font-size:18px;margin:0;font-weight:700}
 h2{font-size:15px;font-weight:700;margin:0}
 .card-title{
@@ -99,9 +100,10 @@ input:focus,select:focus,textarea:focus,button:focus-visible{
   border-color:var(--focus);
   box-shadow:var(--focus-ring);
 }
-/* number spin-button alignment */
-input[type=number]{-moz-appearance:textfield}
-input[type=number]::-webkit-inner-spin-button{opacity:.5;height:28px}
+/* hide number up/down spinner buttons on all engines */
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;display:none}
 
 /* ---- Buttons ---- */
 button{
@@ -136,6 +138,20 @@ button:active{transform:translateY(0)}
 .btn.danger{background:var(--accent);border-color:#374151;color:#f87171}
 .btn.small{padding:5px 10px;font-size:12px;border-radius:7px}
 .submit-btn{padding:10px 20px;font-size:14px}
+
+/* ---- Header nav link (anchor styled as a ghost button) ---- */
+a.nav-link{
+  display:inline-flex;align-items:center;gap:5px;
+  background:transparent;border:1px solid var(--border);
+  color:var(--brand);border-radius:8px;padding:5px 12px;
+  font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;
+  transition:transform .15s,box-shadow .15s,border-color .15s,background .15s;
+}
+a.nav-link:hover{
+  transform:translateY(-1px);border-color:var(--brand);
+  background:color-mix(in srgb,var(--brand) 10%,transparent);
+  box-shadow:0 3px 12px rgba(0,0,0,.15);
+}
 
 /* ---- Sketch row ---- */
 .sketch-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -247,7 +263,6 @@ tfoot td{border-top:2px solid var(--border);font-weight:700}
 }
 [data-theme="light"] thead th{background:#fdecd8}
 [data-theme="light"] tbody tr:hover{background:rgba(192,82,42,.04)}
-[data-theme="light"] .logo{box-shadow:0 0 0 2px #fdecd8}
 [data-theme="light"] #shapePreview{background:#fdf6ee!important}
 [data-theme="light"] .btn.primary{color:#fff}
 

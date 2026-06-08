@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Concrete Casting &amp; Formwork Schedule</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8F%97%EF%B8%8F</text></svg>" />
+<link rel="stylesheet" href="bbs/bbs.css" />
+<link rel="stylesheet" href="formwork/formwork.css" />
+</head>
+<body class="cfs">
+
+<!-- ============ HEADER ============ -->
+<header>
+  <div class="wrap brand">
+    <div class="logo" aria-hidden="true"></div>
+    <div>
+      <h1>Concrete Casting &amp; Formwork</h1>
+      <div class="subtle">CFS · concrete volume · shuttering area · print</div>
+    </div>
+    <div class="space"></div>
+    <a class="btn small ghost nav-link" href="index.html" title="Bar Bending Schedule">🔩 Bar Bending</a>
+    <button class="btn small ghost" id="btnInfo"     title="Project Info (Alt+I)">ℹ️ Info</button>
+    <button class="btn small ghost" id="btnSettings" title="Settings (Alt+S)">⚙️ Settings</button>
+    <button class="btn small ghost" id="btnHelp"     title="Help (Alt+H)">❓ Help</button>
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">
+      <span id="themeIcon">🧱</span>
+      <div class="theme-toggle-track"><div class="theme-toggle-knob"></div></div>
+      <span id="themeLabel">Rust</span>
+    </button>
+  </div>
+</header>
+
+<main class="wrap" style="margin-top:14px;display:flex;flex-direction:column;gap:14px">
+
+  <!-- ============ PANELS (Info / Settings) ============ -->
+  <div id="panelSlot">
+    <section class="card collapsed" id="infoPanel" aria-live="polite">
+      <h2 class="card-title">Project Information</h2>
+      <div class="info-grid">
+        <div class="info-col-main">
+          <div class="fgroup">
+            <label for="infoHeader">Header <span class="subtle">(optional)</span></label>
+            <textarea id="infoHeader" rows="2" placeholder="e.g., ABC Structural Engineers Pvt. Ltd.&#10;Dept. of Civil Engineering, Mumbai"></textarea>
+          </div>
+          <div class="fgroup">
+            <label for="infoProject">Name of Work</label>
+            <textarea id="infoProject" rows="2" placeholder="e.g., Residential Block A – Ground Floor&#10;RCC Framed Structure"></textarea>
+          </div>
+        </div>
+        <div class="info-col-side">
+          <div class="fgroup">
+            <label for="infoAgency">Name of Agency</label>
+            <input type="text" id="infoAgency" placeholder="e.g., PWD Division No. 2">
+          </div>
+          <div class="fgroup">
+            <label for="infoRef">Reference</label>
+            <textarea id="infoRef" rows="3" placeholder="DWG-S-101, Rev. 2&#10;Estimate No. 45/2024"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button class="btn small primary" id="saveInfo">💾 Save Info</button>
+        <button class="btn small ghost"   id="clearInfo">Clear</button>
+      </div>
+      <div class="footer">Shared with the Bar Bending Schedule. Appears in print headers and exports.</div>
+    </section>
+
+    <section class="card collapsed" id="settingsPanel" aria-live="polite">
+      <h2 class="card-title">Settings</h2>
+      <div class="frow">
+        <div class="fgroup fg-2"><label for="defaultGrade">Default concrete grade</label>
+          <select id="defaultGrade">
+            <option>M10</option><option>M15</option><option>M20</option>
+            <option selected>M25</option><option>M30</option><option>M35</option>
+            <option>M40</option><option>M45</option><option>M50</option>
+          </select></div>
+        <div class="fgroup fg-1"><label for="concWastage">Concrete wastage (%)</label>
+          <input id="concWastage" type="number" step="0.5" min="0" value="3" /></div>
+        <div class="fgroup fg-1"><label for="fwWastage">Formwork wastage (%)</label>
+          <input id="fwWastage" type="number" step="0.5" min="0" value="5" /></div>
+        <div class="fgroup fg-1"><label for="concRate">Concrete rate (/m³)</label>
+          <input id="concRate" type="number" step="1" min="0" value="0" placeholder="optional" /></div>
+        <div class="fgroup fg-1"><label for="fwRate">Formwork rate (/m²)</label>
+          <input id="fwRate" type="number" step="1" min="0" value="0" placeholder="optional" /></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn small" id="saveSettings">Save</button>
+        <button class="btn small ghost" id="resetSettings">Reset Defaults</button>
+      </div>
+      <div class="footer">Wastage is added on top of net quantities in the summary. Rates are optional — set to 0 to hide cost.</div>
+    </section>
+  </div>
+
+  <!-- ============ ADD MEMBER FORM ============ -->
+  <section class="card" id="addMemberCard">
+    <h2 class="card-title">Add Member
+      <span class="kbhint">Tab = next field · Enter = add to schedule · Esc = reset</span>
+    </h2>
+
+    <form id="memberForm" autocomplete="off">
+
+      <!-- ROW 1 — Identity -->
+      <div class="frow">
+        <div class="fgroup fg-4" data-tip="Member name / location">
+          <label for="member">Member</label>
+          <input id="member" tabindex="1" placeholder="Column C3, Beam B1, Footing F2…" />
+        </div>
+        <div class="fgroup fg-1" data-tip="Unique mark / tag">
+          <label for="mark">Mark</label>
+          <input id="mark" tabindex="2" placeholder="C3" />
+        </div>
+        <div class="fgroup fg-2" data-tip="Structural element type">
+          <label for="element">Element</label>
+          <select id="element" tabindex="3">
+            <option value="Column">Column</option>
+            <option value="Beam">Beam</option>
+            <option value="Plinth Beam">Plinth Beam</option>
+            <option value="Footing">Footing</option>
+            <option value="Slab">Slab</option>
+            <option value="Wall">Wall</option>
+            <option value="Lintel">Lintel</option>
+            <option value="Pedestal">Pedestal</option>
+            <option value="Raft">Raft</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="fgroup fg-1" data-tip="Concrete grade / mix">
+          <label for="grade">Grade</label>
+          <select id="grade" tabindex="4">
+            <option>M10</option><option>M15</option><option>M20</option>
+            <option selected>M25</option><option>M30</option><option>M35</option>
+            <option>M40</option><option>M45</option><option>M50</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ROW 2 — Section + Sketch -->
+      <div class="frow">
+        <div class="fgroup fg-2" data-tip="Cross-section profile">
+          <label for="section">Cross-Section</label>
+          <select id="section" tabindex="5">
+            <option value="rect">Rectangular (B × D)</option>
+            <option value="circle">Circular (⌀)</option>
+            <option value="tbeam">T-Beam (flanged)</option>
+            <option value="trapezoid">Trapezoidal</option>
+            <option value="custom">Custom (area &amp; perimeter)</option>
+          </select>
+        </div>
+        <div class="fgroup fg-2" data-tip="Attach or draw a cross-section sketch">
+          <span class="flabel">Section Sketch <span class="subtle">(optional)</span></span>
+          <div class="sketch-row">
+            <input type="file" id="shapeFile" accept="image/jpeg,image/png,image/svg+xml" style="display:none" tabindex="-1">
+            <button type="button" id="shapeUploadBtn" class="btn small ghost" tabindex="6">📎 Upload</button>
+            <button type="button" id="shapeDrawBtn"   class="btn small ghost" tabindex="7">✏️ Draw</button>
+            <button type="button" id="shapeClearBtn"  class="btn small ghost" tabindex="-1" style="display:none">✕ Clear</button>
+            <img id="shapePreview" alt="preview" style="display:none;max-height:40px;max-width:80px;object-fit:contain;border:1px solid var(--border);border-radius:6px;padding:2px" />
+          </div>
+        </div>
+        <div class="fgroup fg-3 chips-group">
+          <span class="flabel" aria-hidden="true">&nbsp;</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding-top:2px">
+            <span class="chip">Area: <span id="areaPreview" class="mono">0</span> m²</span>
+            <span class="chip">Vol: <span id="volPreview" class="mono">0</span> m³</span>
+            <span class="chip">Formwork: <span id="fwPreview" class="mono">0</span> m²</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROW 3 — Section dimensions -->
+      <div id="dimBlock">
+        <div class="shape shape-rect">
+          <div class="frow">
+            <div class="fgroup fg-2"><label for="R_B">Width B (mm)</label><input id="R_B" type="number" min="1" step="1" tabindex="10" placeholder="e.g. 300" /></div>
+            <div class="fgroup fg-2"><label for="R_D">Depth / Height D (mm)</label><input id="R_D" type="number" min="1" step="1" tabindex="11" placeholder="e.g. 450" /></div>
+          </div>
+        </div>
+
+        <div class="shape shape-circle hidden">
+          <div class="frow">
+            <div class="fgroup fg-2"><label for="C_dia">Diameter ⌀ (mm)</label><input id="C_dia" type="number" min="1" step="1" tabindex="10" placeholder="e.g. 400" /></div>
+          </div>
+        </div>
+
+        <div class="shape shape-tbeam hidden">
+          <div class="frow">
+            <div class="fgroup fg-1"><label for="T_bf">Flange Width bf (mm)</label><input id="T_bf" type="number" min="1" step="1" tabindex="10" /></div>
+            <div class="fgroup fg-1"><label for="T_hf">Flange Thk hf (mm)</label><input id="T_hf" type="number" min="1" step="1" tabindex="11" /></div>
+            <div class="fgroup fg-1"><label for="T_bw">Web Width bw (mm)</label><input id="T_bw" type="number" min="1" step="1" tabindex="12" /></div>
+            <div class="fgroup fg-1"><label for="T_D">Overall Depth D (mm)</label><input id="T_D" type="number" min="1" step="1" tabindex="13" /></div>
+          </div>
+        </div>
+
+        <div class="shape shape-trapezoid hidden">
+          <div class="frow">
+            <div class="fgroup fg-1"><label for="Z_a">Top Width a (mm)</label><input id="Z_a" type="number" min="1" step="1" tabindex="10" /></div>
+            <div class="fgroup fg-1"><label for="Z_b">Bottom Width b (mm)</label><input id="Z_b" type="number" min="1" step="1" tabindex="11" /></div>
+            <div class="fgroup fg-1"><label for="Z_h">Height h (mm)</label><input id="Z_h" type="number" min="1" step="1" tabindex="12" /></div>
+          </div>
+        </div>
+
+        <div class="shape shape-custom hidden">
+          <div class="frow">
+            <div class="fgroup fg-2"><label for="X_area">Section Area (m²)</label><input id="X_area" type="number" min="0" step="0.0001" tabindex="10" placeholder="e.g. 0.135" /></div>
+            <div class="fgroup fg-2"><label for="X_perim">Shutter Perimeter (m)</label><input id="X_perim" type="number" min="0" step="0.001" tabindex="11" placeholder="e.g. 1.50" /></div>
+            <div class="fgroup fg-3"><label for="X_name">Section Name (optional)</label><input id="X_name" type="text" placeholder="Custom section" tabindex="12" /></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ROW 4 — Length / Qty / Formwork -->
+      <div class="frow">
+        <div class="fgroup fg-2" data-tip="Casting length / height of the member"><label for="length">Length / Height (m)</label>
+          <input id="length" type="number" min="0" step="0.001" tabindex="20" placeholder="e.g. 3.0" /></div>
+        <div class="fgroup fg-1" data-tip="Number of identical members"><label for="nos">Nos</label>
+          <input id="nos" type="number" min="1" step="1" value="1" tabindex="21" /></div>
+        <div class="fgroup fg-3" data-tip="Which faces are shuttered"><label for="fwMode">Formwork Faces</label>
+          <select id="fwMode" tabindex="22"></select></div>
+        <div class="fgroup fg-2">
+          <span class="flabel">End Faces</span>
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);padding-top:6px;white-space:nowrap">
+            <input type="checkbox" id="fwEnds" style="width:auto;margin:0" tabindex="23"> Shutter both ends
+          </label>
+        </div>
+        <div class="fgroup fg-3"><label for="remarks">Remarks</label>
+          <input id="remarks" tabindex="24" placeholder="GF columns, lift core…" /></div>
+      </div>
+
+      <!-- ROW 5 — Submit -->
+      <div class="toolbar form-actions">
+        <button class="btn primary submit-btn" type="submit" tabindex="30">➕ Add to Schedule</button>
+        <button id="reset" type="button" class="btn ghost" tabindex="31">↺ Reset</button>
+        <div class="space"></div>
+        <span id="formFeedback" class="form-feedback" aria-live="polite"></span>
+      </div>
+    </form>
+  </section>
+
+  <!-- ============ SCHEDULE TABLE ============ -->
+  <section class="card" id="scheduleSection">
+    <div class="flex">
+      <h2 style="margin:0">Schedule</h2>
+      <span class="pill" id="countBadge">0 items</span>
+      <div class="space"></div>
+      <button class="btn small" id="exportCSV" tabindex="40">⬇️ CSV</button>
+      <button class="btn small" id="saveJSON"  tabindex="41">💾 Save</button>
+      <button class="btn small" id="loadJSON"  tabindex="42">📂 Load</button>
+      <label id="pdfTexturedLabel" title="Draw the rebar/3D texture for any textured sketches in the PDF (vector — larger file). Off = clean lines (smallest)."
+        style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none">
+        <input type="checkbox" id="pdfTextured" style="width:auto;margin:0"> Textured
+      </label>
+      <button class="btn small warn"   id="printBBS" tabindex="43">📄 Export PDF</button>
+      <button class="btn small danger" id="clearAll"  tabindex="44">🗑️ Clear</button>
+    </div>
+
+    <div id="printWrapper">
+      <div id="printHeader">
+        <div id="pmHeaderTitle" style="display:none"></div>
+        <div id="printTitle">CONCRETE CASTING &amp; FORMWORK SCHEDULE</div>
+        <table class="print-meta-table"><tbody>
+          <tr><td class="pml">Name of Work</td><td class="pmv" id="pmProject" colspan="3">-</td></tr>
+          <tr><td class="pml">Name of Agency</td><td class="pmv" id="pmAgency" colspan="3">-</td></tr>
+          <tr><td class="pml">Reference</td><td class="pmv" id="pmRef" colspan="3">-</td></tr>
+        </tbody></table>
+      </div>
+      <div id="bbsTableContainer" style="overflow:auto;margin-top:10px">
+        <table id="bbsTable">
+          <thead><tr>
+            <th>#</th><th>Member</th><th>Element</th><th>Section</th>
+            <th>Sketch</th><th>Dimensions</th><th>L (m)</th><th>Nos</th><th>Grade</th>
+            <th>Volume Calc</th><th>Volume (m³)</th>
+            <th>Formwork Calc</th><th>Formwork (m²)</th><th>Remarks</th><th></th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+          <tfoot><tr>
+            <td colspan="10" class="right">Totals:</td>
+            <td class="mono right" id="sumVol">0.000</td>
+            <td></td>
+            <td class="mono right" id="sumFw">0.000</td>
+            <td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- Concrete grade + wastage summary -->
+    <div id="summaryBar" class="summary-bar"></div>
+    <div class="footer">Volumes &amp; formwork areas are net (before wastage). Edit any row with ✏️. Drag rows to reorder.</div>
+  </section>
+</main>
+
+<!-- Help dialog -->
+<dialog id="helpDlg">
+  <form method="dialog" style="max-width:680px">
+    <h3>How to use</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <tr><td style="padding:6px 8px;vertical-align:top;width:110px"><kbd>Tab</kbd></td><td style="padding:6px 8px">Move to next field</td></tr>
+      <tr><td style="padding:6px 8px"><kbd>Enter</kbd></td><td style="padding:6px 8px">Add member to schedule (from any field)</td></tr>
+      <tr><td style="padding:6px 8px"><kbd>Esc</kbd></td><td style="padding:6px 8px">Reset form</td></tr>
+      <tr><td style="padding:6px 8px"><kbd>Alt+I</kbd></td><td style="padding:6px 8px">Open/close Project Info</td></tr>
+      <tr><td style="padding:6px 8px"><kbd>Alt+S</kbd></td><td style="padding:6px 8px">Open/close Settings</td></tr>
+    </table>
+    <ol style="margin-top:12px">
+      <li>Fill Member → Element → Grade → Section → Dimensions → Length → Nos → Formwork → Add.</li>
+      <li><b>Concrete volume</b> = section area × length × nos. <b>Formwork</b> = shutter perimeter × length × nos (+ end faces).</li>
+      <li>Click <b>✏️ Draw</b> to sketch the cross-section. The drawer opens in the <b>Line · No Texture</b> style — pick a rebar texture from the <b>Texture</b> tool if you want ribbed bars.</li>
+      <li>Use <b>CSV / Save / Export PDF</b> — all exports include project info and the grade summary.</li>
+    </ol>
+    <div class="toolbar"><button class="btn small">Close</button></div>
+  </form>
+</dialog>
+
+<!-- Sketch enlarge lightbox -->
+<dialog id="sketchDlg">
+  <div id="sketchDlgHead">
+    <span id="sketchDlgTitle">Section Sketch</span>
+    <button type="button" class="btn small ghost" id="sketchDlgClose" title="Close">✕</button>
+  </div>
+  <div id="sketchDlgBody"><img id="sketchDlgImg" alt="section sketch" /></div>
+</dialog>
+
+<script src="bbs/konva.min.js"></script>
+<script src="bbs/jspdf.umd.min.js"></script>
+<script src="bbs/shape-vector.js"></script>
+<script src="bbs/shape-drawer.js"></script>
+<script src="formwork/formwork.js"></script>
+</body>
+</html>

@@ -256,6 +256,7 @@ function render(){
       <td class="mono" style="font-size:11px;line-height:1.4;min-width:140px">${r.clCalc||'<span class="subtle">—</span>'}</td>
       <td class="mono right">${fmt0(r.clPerBarMm)}</td>
       <td class="mono right">${r.qty}</td>
+      <td class="mono right">${fmt0(r.extraLen||0)}</td>
       <td class="mono right">${fmt3(r.totalLenM)}</td>
       <td class="mono right">${fmt3(r.unitWtKgPerM)}</td>
       <td class="mono right">${fmt3(r.totalWtKg)}</td>
@@ -424,13 +425,14 @@ $('#barForm').addEventListener('submit', e=>{
 
   if(!isFinite(cl)||cl<=0){ if(window._showFeedback) window._showFeedback('⚠ Check dimensions — CL must be > 0','err'); else alert('Please provide valid dimensions. Cutting length must be > 0.'); return; }
 
+  // Extra / lap length is reported in its own column and added once per row to the
+  // total — it is NOT folded into the per-bar cutting length (CL/Bar stays pure).
   const extraLen=Number($('#extraLen').value)||0;
-  if(extraLen>0){ cl+=extraLen; clCalc=`${clCalc} + ${fmt0(extraLen)} (extra/lap)`; }
 
   const qty=computeQty(qtyMode,{qty:Number($('#qty').value),spacing:Number($('#spacing').value),span:Number($('#span').value),offsetStart:Number($('#offsetStart').value),offsetEnd:Number($('#offsetEnd').value)});
   if(qty<=0){ if(window._showFeedback) window._showFeedback('⚠ Quantity is zero — check spacing/span','err'); else alert('Quantity is zero. Check inputs or spacing.'); return; }
 
-  const wtPerM=unitWeightKgPerM(dia), totalLenM=(cl/1000)*qty, totalWtKg=wtPerM*totalLenM;
+  const wtPerM=unitWeightKgPerM(dia), totalLenM=(cl*qty+extraLen)/1000, totalWtKg=wtPerM*totalLenM;
 
   const row = {
     member,mark,shape,shapeLabel,dia,
@@ -597,14 +599,14 @@ function toCSV(){
   lines.push(''); // blank separator
 
   // Table headers
-  lines.push(['#','Member','Mark','Dia (mm)','Shape','CL Calculation','CL / Bar (mm)','Qty','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
+  lines.push(['#','Member','Mark','Dia (mm)','Shape','CL Calculation','CL / Bar (mm)','Qty','Extra/Lap (mm)','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
   rows.forEach((r,i)=>{
     lines.push([
       i+1, `"${r.member}"`, r.mark||'', r.dia, r.shapeLabel, csvEscape(r.clCalc||''), fmt0(r.clPerBarMm),
-      r.qty, fmt3(r.totalLenM), fmt3(r.unitWtKgPerM), fmt3(r.totalWtKg), `"${(r.remarks||'').replace(/"/g,"'")}"`
+      r.qty, fmt0(r.extraLen||0), fmt3(r.totalLenM), fmt3(r.unitWtKgPerM), fmt3(r.totalWtKg), `"${(r.remarks||'').replace(/"/g,"'")}"`
     ].join(','));
   });
-  lines.push(['Totals','','','','','','','',
+  lines.push(['Totals','','','','','','','','',
     fmt3(rows.reduce((a,b)=>a+b.totalLenM,0)),'',
     fmt3(rows.reduce((a,b)=>a+b.totalWtKg,0)),''
   ].join(','));
@@ -699,6 +701,7 @@ $('#printBBS').addEventListener('click', async () => {
       { key:'calc',   title:'CL Calculation',align:'left',  pct:16 },
       { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:12  },
       { key:'qty',    title:'Qty',           align:'right', pct:9  },
+      { key:'extra',  title:'Extra/Lap (mm)',align:'right', pct:11 },
       { key:'totL',   title:'Total L (m)',   align:'right', pct:12 },
       { key:'wtm',    title:'Wt/m (kg)',     align:'right', pct:12 },
       { key:'totW',   title:'Total Wt (kg)', align:'right', pct:12 },
@@ -722,6 +725,7 @@ $('#printBBS').addEventListener('click', async () => {
           case 'calc':   out.push(saniM(r.clCalc||'')); break;
           case 'cl':     out.push(fmt0(r.clPerBarMm)); break;
           case 'qty':    out.push(String(r.qty)); break;
+          case 'extra':  out.push(fmt0(r.extraLen||0)); break;
           case 'totL':   out.push(fmt3(r.totalLenM)); break;
           case 'wtm':    out.push(fmt3(r.unitWtKgPerM)); break;
           case 'totW':   out.push(fmt3(r.totalWtKg)); break;
@@ -863,6 +867,7 @@ $('#printBBS').addEventListener('click', async () => {
         calc:   pdf.splitTextToSize(sani(r.clCalc||''),      col('calc').w   - 2*pad),
         cl:     fmt0(r.clPerBarMm),
         qty:    String(r.qty),
+        extra:  fmt0(r.extraLen||0),
         totL:   fmt3(r.totalLenM),
         wtm:    fmt3(r.unitWtKgPerM),
         totW:   fmt3(r.totalWtKg),
@@ -927,9 +932,10 @@ $('#printBBS').addEventListener('click', async () => {
         putText(col('sketch'), '—', y);
       }
       putText(col('calc'), t.calc, y);
-      putText(col('cl'),   t.cl,   y);
-      putText(col('qty'),  t.qty,  y);
-      putText(col('totL'), t.totL, y);
+      putText(col('cl'),    t.cl,    y);
+      putText(col('qty'),   t.qty,   y);
+      putText(col('extra'), t.extra, y);
+      putText(col('totL'),  t.totL,  y);
       putText(col('wtm'),  t.wtm,  y);
       putText(col('totW'), t.totW, y);
       putText(col('rem'),  t.rem,  y);
@@ -942,7 +948,7 @@ $('#printBBS').addEventListener('click', async () => {
     if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
     pdf.setTextColor(0,0,0);
-    const labelW = cols.slice(0,9).reduce((a,c)=>a+c.w,0);
+    const labelW = cols.slice(0,10).reduce((a,c)=>a+c.w,0);
     // Re-assert the white fill before every cell: text() in between resets the
     // active fill colour to the text colour (black), which would otherwise
     // paint the following cells solid black.
@@ -1108,7 +1114,7 @@ document.getElementById('shapeDrawBtn').addEventListener('click', () => {
     preview.src = src;
     preview.style.display = 'block';
     document.getElementById('shapeClearBtn').style.display = 'inline-flex';
-  });
+  }, { history: currentShapeHist });   // reload the saved drawing for editing
 });
 
 /* =========================
