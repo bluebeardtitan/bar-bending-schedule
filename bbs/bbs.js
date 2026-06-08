@@ -599,7 +599,7 @@ function toCSV(){
   lines.push(''); // blank separator
 
   // Table headers
-  lines.push(['#','Member','Mark','Dia (mm)','Shape','CL Calculation','CL / Bar (mm)','Qty','Extra/Lap (mm)','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
+  lines.push(['#','Member','Mark','Ø','Shape','CL Calculation','CL / Bar (mm)','Qty','Extra/Lap (mm)','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
   rows.forEach((r,i)=>{
     lines.push([
       i+1, `"${r.member}"`, r.mark||'', r.dia, r.shapeLabel, csvEscape(r.clCalc||''), fmt0(r.clPerBarMm),
@@ -695,7 +695,7 @@ $('#printBBS').addEventListener('click', async () => {
       { key:'idx',    title:'#',             align:'right' },
       { key:'member', title:'Member',        align:'left' },
       { key:'mark',   title:'Mark',          align:'left' },
-      { key:'dia',    title:'Ø',             align:'center' },
+      { key:'dia',    title:'Ø',      		align:'center', pct:3 },
       { key:'sketch', title:'Sketch',        align:'center' },
       { key:'calc',   title:'CL Calculation',align:'left',  pct:16 },
       { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:12  },
@@ -841,8 +841,14 @@ $('#printBBS').addEventListener('click', async () => {
         const tx = c.align === 'right'  ? c.x + c.w - pad
                  : c.align === 'center' ? c.x + c.w / 2
                  :                         c.x + pad;
-        tl.forEach((ln,i) =>
-          pdf.text(ln, tx, y + pad + i*lineH, { align:c.align, baseline:'top' }));
+        const n = tl.length;
+        const _ptMM = 0.352777778;
+        if (n === 1) {
+          pdf.text(tl[0], tx, y + hh/2 - fontSize*_ptMM*0.35, { align:c.align, baseline:'top' });
+        } else {
+          tl.forEach((ln,i) =>
+            pdf.text(ln, tx, y + (hh - n*lineH)/2 + i*lineH, { align:c.align, baseline:'top' }));
+        }
       });
       pdf.setTextColor(0,0,0);
       y += hh;

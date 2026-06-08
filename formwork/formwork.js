@@ -764,7 +764,13 @@ $('#printBBS').addEventListener('click', async () => {
         const tx = c.align === 'right'  ? c.x + c.w - pad
                  : c.align === 'center' ? c.x + c.w/2
                  :                         c.x + pad;
-        tl.forEach((ln,i) => pdf.text(ln, tx, y + pad + i*lineH, { align:c.align, baseline:'top' }));
+        const n = tl.length;
+        const _ptMM = 0.352777778;
+        if (n === 1) {
+          pdf.text(tl[0], tx, y + hh/2 - fontSize*_ptMM*0.35, { align:c.align, baseline:'top' });
+        } else {
+          tl.forEach((ln,i) => pdf.text(ln, tx, y + (hh - n*lineH)/2 + i*lineH, { align:c.align, baseline:'top' }));
+        }
       });
       pdf.setTextColor(0,0,0);
       y += hh;
