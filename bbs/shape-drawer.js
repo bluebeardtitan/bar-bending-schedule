@@ -1868,6 +1868,14 @@ function setTool(t) {
   if(pQuick) pQuick.style.display = t==='shapes'           ? 'flex' : 'none';
   if(pTex)   pTex.style.display   = t==='texture'          ? 'flex' : 'none';
   if(pGrid)  pGrid.style.display  = t==='grid'             ? 'flex' : 'none';
+  /* Desktop lays the tool palette out vertically, which can push the active
+     tool's contextual panel below the sidebar fold — bring it into view so its
+     controls (e.g. the Shape Library) aren't hidden under the chip grid. */
+  const activePanel=[pBar,pLabel,pQuick,pTex,pGrid].find(p=>p&&p.style.display!=='none');
+  if(activePanel&&activePanel.scrollIntoView){
+    try{activePanel.scrollIntoView({block:'nearest',behavior:'smooth'});}
+    catch(_){activePanel.scrollIntoView();}
+  }
   const container=document.getElementById('konvaContainer');
   if(container)container.style.cursor=t==='text'?'text':(t==='edit-points'||noDraw.includes(t))?'default':'crosshair';
   showPathHint(false);
@@ -2160,10 +2168,13 @@ const drawerResponsiveCSS = `
   border-radius:7px; padding:6px 8px;
 }
 
-/* ── Quick-shape library grid (Shapes tool panel) ── */
+/* ── Quick-shape library grid (Shapes tool panel) ──
+   minmax(0,1fr) (not bare 1fr) lets the tracks shrink below their content's
+   min-width so long shape names ellipsis-clip instead of overflowing the
+   panel horizontally. */
 .quick-shape-grid {
-  display:grid; grid-template-columns:repeat(2,1fr); gap:5px;
-  max-height:230px; overflow-y:auto; padding-right:2px;
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px;
+  max-height:230px; overflow-y:auto; overflow-x:hidden; padding-right:2px;
 }
 .quick-shape-grid .shape-prev-btn {
   display:flex; align-items:center; gap:6px; text-align:left;
@@ -2187,7 +2198,7 @@ const drawerResponsiveCSS = `
 }
 
 /* ── Rebar texture swatch grid (Texture tool panel) ── */
-.rebar-style-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:5px; }
+.rebar-style-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
 .rebar-style-grid .rebar-style-btn {
   display:flex; align-items:center; gap:7px; text-align:left;
   padding:7px 9px; border:1px solid var(--border); border-radius:9px;
@@ -2236,8 +2247,56 @@ const drawerResponsiveCSS = `
   #drawerSidebar .annot-preset { padding:6px 10px !important; font-size:12px !important; }
   #drawerAnnotText { flex:1 1 160px; }
   #quickShapeList { width:100%; }
-  .quick-shape-grid, .rebar-style-grid { grid-template-columns:repeat(3,1fr); max-height:none; }
+  .quick-shape-grid, .rebar-style-grid { grid-template-columns:repeat(3,minmax(0,1fr)); max-height:none; }
   .quick-shape-grid .shape-prev-btn, .rebar-style-grid .rebar-style-btn { font-size:11.5px; padding:9px 9px; }
+}
+
+/* ── Desktop / tablet-landscape (≥761px): the side rail is a NARROW VERTICAL
+   column, so the mobile-style horizontally-scrolling tool bar hides all but
+   ~2 of the 12 tools. Re-lay the palette out vertically — every cluster
+   stacked, its chips wrapping into a tidy grid — so nothing scrolls sideways
+   and the whole toolkit is visible at a glance. ── */
+@media (min-width: 761px) {
+  /* A touch wider so three chips sit comfortably per row. */
+  #drawerSidebar { width:212px !important; }
+
+  /* Vertical layout means no horizontal scroll → drop the edge-fade hints. */
+  .tool-bar-wrap::before, .tool-bar-wrap::after { display:none; }
+
+  /* Stack the clusters; each owns a full-width row. */
+  .tool-action-bar {
+    flex-direction:column; flex-wrap:nowrap; align-items:stretch;
+    gap:9px; overflow:visible; padding:4px 0 2px; scroll-snap-type:none;
+  }
+
+  /* Cluster = a small caption header above a wrapping grid of chips. */
+  .tool-action-bar .tool-group {
+    flex-direction:column; align-items:stretch; gap:7px; padding:0 0 9px;
+  }
+  .tool-action-bar .tool-group + .tool-group { padding-left:0; }
+
+  /* Swap the vertical dashed side-divider for a horizontal under-rule. */
+  .tool-action-bar .tool-group:not(:last-child)::after {
+    left:0; right:0; top:auto; bottom:0; width:auto;
+    border-right:none;
+    border-bottom:1.5px dashed color-mix(in srgb, var(--border) 80%, var(--brand));
+  }
+
+  /* Un-rotate the cluster caption into a normal little section header. */
+  .tool-action-bar .tg-label {
+    writing-mode:horizontal-tb; transform:none; align-self:flex-start;
+    border-left:none; padding:1px 0; line-height:1;
+    font-size:8.5px; letter-spacing:.2em;
+  }
+
+  /* Chips wrap left-aligned at a fixed size — three per row, rest wrap. */
+  .tool-action-bar .tool-group-rail { flex-wrap:wrap; }
+
+  /* Long preset / texture names get the full panel width: a single column
+     reads cleanly instead of two cramped, clipped tracks. */
+  .quick-shape-grid { grid-template-columns:1fr; max-height:300px; }
+  .quick-shape-grid .shape-prev-btn { padding:8px 9px; font-size:11px; }
+  .rebar-style-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }`;
 
 function ensureDrawerModal() {
