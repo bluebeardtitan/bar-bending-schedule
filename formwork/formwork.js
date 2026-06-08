@@ -642,7 +642,7 @@ $('#printBBS').addEventListener('click', async () => {
     const sani = s => String(s == null ? '' : s)
       .replace(/⌀/g,'Ø').replace(/π/g,'pi').replace(/√/g,'sqrt').replace(/−/g,'-').replace(/×/g,'x').replace(/²/g,'2').replace(/³/g,'3');
 
-    const pad = 1.6, lineH = 3.6, fontSize = 8, sketchMaxH = 16;
+    const pad = 1.6, lineH = 3.6, fontSize = 8, sketchMaxH = 35;
 
     const cols = [
       { key:'idx',    title:'#',              align:'right' },
@@ -684,7 +684,7 @@ $('#printBBS').addEventListener('click', async () => {
       });
       return out;
     };
-    const SKETCH_W = 30, MIN_W = 7, FLEX_MIN = 18;
+    const SKETCH_W = 60, MIN_W = 7, FLEX_MIN = 18;
     const FLEX = new Set(['member','element','section','dims','rem']);
 
     pdf.setFontSize(fontSize);

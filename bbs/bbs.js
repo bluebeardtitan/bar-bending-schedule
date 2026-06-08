@@ -684,7 +684,7 @@ $('#printBBS').addEventListener('click', async () => {
     const pad   = 1.6;     // cell padding (mm)
     const lineH = 3.6;     // text line height (mm)
     const fontSize     = 8;
-    const sketchMaxH   = 16;   // max sketch height per row (mm)
+    const sketchMaxH   = 35;   // max sketch height per row (mm)
 
     // ── Column layout — widths fit to actual content, then normalised to fill usableW ──
     // Add `pct:` (percent of the usable page width) to lock a column to a fixed
@@ -695,8 +695,7 @@ $('#printBBS').addEventListener('click', async () => {
       { key:'idx',    title:'#',             align:'right' },
       { key:'member', title:'Member',        align:'left' },
       { key:'mark',   title:'Mark',          align:'left' },
-      { key:'dia',    title:'Ø',             align:'right' },
-      { key:'shape',  title:'Shape',         align:'left' },
+      { key:'dia',    title:'Ø',             align:'center' },
       { key:'sketch', title:'Sketch',        align:'center' },
       { key:'calc',   title:'CL Calculation',align:'left',  pct:16 },
       { key:'cl',     title:'CL/Bar (mm)',   align:'right', pct:12  },
@@ -734,13 +733,13 @@ $('#printBBS').addEventListener('click', async () => {
       });
       return out;
     };
-    const SKETCH_W  = 30;   // images: fixed natural width (mm)
+    const SKETCH_W  = 60;   // images: fixed natural width (mm)
     const MIN_W     = 7;    // floor so headers/numbers never collapse (mm)
     const FLEX_MIN  = 20;   // smallest a free-text column may shrink to (mm)
     // Free-text columns share leftover/overflow width proportionally to their
     // content, so Remarks no longer swallows all the slack and balloon. Numeric
     // and fixed-size columns stay pinned to their content.
-    const FLEX = new Set(['member','mark','shape','rem']);
+    const FLEX = new Set(['member','mark','rem']);
 
     pdf.setFontSize(fontSize);
     // Header measured by its longest word so multi-word titles can wrap across
@@ -863,7 +862,6 @@ $('#printBBS').addEventListener('click', async () => {
         member: pdf.splitTextToSize(sani(r.member||''),     col('member').w - 2*pad),
         mark:   pdf.splitTextToSize(sani(r.mark||''),       col('mark').w   - 2*pad),
         dia:    String(r.dia),
-        shape:  pdf.splitTextToSize(sani(r.shapeLabel||''), col('shape').w  - 2*pad),
         calc:   pdf.splitTextToSize(sani(r.clCalc||''),      col('calc').w   - 2*pad),
         cl:     fmt0(r.clPerBarMm),
         qty:    String(r.qty),
@@ -900,7 +898,7 @@ $('#printBBS').addEventListener('click', async () => {
         } catch { /* unreadable image → fall through to dash */ }
       }
 
-      const maxLines = Math.max(t.member.length, t.shape.length, t.calc.length, t.rem.length, 1);
+      const maxLines = Math.max(t.member.length, t.calc.length, t.rem.length, 1);
       const rowH = Math.max(maxLines * lineH, sk ? sk.h : 0) + 2 * pad;
 
       if (y + rowH > pageH - margin) {
@@ -915,7 +913,6 @@ $('#printBBS').addEventListener('click', async () => {
       putText(col('member'), t.member, y);
       putText(col('mark'),   t.mark,   y);
       putText(col('dia'),    t.dia,    y);
-      putText(col('shape'),  t.shape,  y);
       if (sk) {
         const sx = col('sketch').x + (col('sketch').w - sk.w) / 2;
         const sy = y + (rowH - sk.h) / 2;

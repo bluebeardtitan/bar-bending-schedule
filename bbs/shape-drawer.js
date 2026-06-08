@@ -281,18 +281,16 @@ function orthoSnap(pt, anchor) {
 /* =====================================================
    ORTHO GEOMETRY — exact straight H/V segments joined
    by precise circular arc fillets at every interior corner.
-   Bend radius = ORTHO_BEND_FACTOR x bar-diameter,
-   clamped so it never exceeds half of either adjacent
-   segment length.  Returns { path: Path2D, samples }.
+   Fillet radius in px (0 = sharp corners), clamped so it
+   never exceeds half of either adjacent segment length.
+   Returns { path: Path2D, samples }.
    ===================================================== */
-const ORTHO_BEND_FACTOR = 2.0;
-
 function buildOrthoGeometry(points, diam) {
   const STEP = 2;
   const n    = points.length;
   if (n < 2) return { path: new Path2D(), samples: [] };
 
-  const R    = Math.max(6, (diam || 16) * ORTHO_BEND_FACTOR);
+  const R    = Math.max(0, _orthoFillet);
   const path = new Path2D();
   const samples = [];
 
@@ -988,6 +986,15 @@ const drawerHTML = `
           <span id="drawerBarVal" style="font-size:11px;min-width:22px;color:var(--brand);font-weight:700">16</span>
           <span style="font-size:10px;color:var(--muted)">px</span>
         </div>
+
+        <div class="dp-divider" style="margin:6px 0"></div>
+        <div class="dp-sub">Fillet Radius</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" id="drawerFillet" min="0" max="40" value="6" style="flex:1">
+          <span id="drawerFilletVal" style="font-size:11px;min-width:22px;color:var(--brand);font-weight:700">6</span>
+          <span style="font-size:10px;color:var(--muted)">px</span>
+        </div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">0 = sharp · <b>F</b> key toggles 0/saved</div>
       </div>
 
       <!-- ── CONTEXTUAL PANEL · Texture tool ── -->
@@ -1109,6 +1116,10 @@ let _stageResizeObserver = null;
 /* ── Grid state ── */
 let _gridVisible  = false;
 let _gridSpacing  = 50;     // px between grid lines (matches the select options)
+
+/* ── Ortho fillet radius ── */
+let _orthoFillet       = 6;  // current fillet radius for ortho bars (px), 0 = sharp corners
+let _orthoFilletSaved  = 6;  // saved slider value to toggle back to
 
 /* double-click detection (timestamp-based, works for mouse + touch) */
 let _lastDownTime = 0;
@@ -1619,7 +1630,7 @@ function showPathHint(on, isOrtho) {
   if(on){
     const titleEl=document.getElementById('pathHintTitle');
     const bodyEl=document.getElementById('pathHintBody');
-    if(isOrtho){if(titleEl)titleEl.textContent='Ortho Drawing…';if(bodyEl)bodyEl.innerHTML='Tap — snap H/V point<br>Double-tap / Enter — finish<br>Esc — cancel';}
+    if(isOrtho){if(titleEl)titleEl.textContent='Ortho Drawing…';if(bodyEl)bodyEl.innerHTML='Tap — snap H/V point<br>Double-tap / Enter — finish<br><b>F</b> — toggle fillet 0/saved<br>Esc — cancel';}
     else{if(titleEl)titleEl.textContent='━ Straight Mode';if(bodyEl)bodyEl.innerHTML='Tap — add point<br>Double-tap / Enter — finish<br><b>B</b> — toggle Bézier curve<br>Esc — cancel';}
   }
 }
@@ -1942,6 +1953,14 @@ function onKeyDown(e) {
     if(dimPhase>=1)renderGhostFrame(mousePos);
   }
   if(e.key==='Enter'&&(activeTool==='rebar-path'||activeTool==='ortho-bar')&&isDrawing) commitRebarPath();
+  if((e.key==='f'||e.key==='F')&&(activeTool==='ortho-bar'||activeTool==='rebar-path')){
+    if(_orthoFillet===0){_orthoFillet=_orthoFilletSaved||6;}else{_orthoFilletSaved=_orthoFillet;_orthoFillet=0;}
+    const el=document.getElementById('drawerFillet');
+    if(el)el.value=_orthoFillet;
+    const valEl=document.getElementById('drawerFilletVal');
+    if(valEl)valEl.textContent=String(_orthoFillet);
+    if(isDrawing)renderGhostFrame(mousePos);else redraw();
+  }
   if((e.key==='b'||e.key==='B')&&activeTool==='rebar-path'&&isDrawing){
     bezierMode=!bezierMode;
     bezierStartIdx=bezierMode?livePts.length-1:-1;
@@ -1991,7 +2010,7 @@ function setTool(t) {
   showPathHint(false);
   const hintEl=document.getElementById('canvasHint');
   const hints={
-    'ortho-bar':   'Taps snap H/V · double-tap to finish',
+    'ortho-bar':   'Taps snap H/V · F=toggle fillet · double-tap to finish',
     'edit-points': 'Drag handles to move points',
     'delete-element': 'Tap an element to delete it',
     'dim-aligned': 'Tap start, end, offset side',
@@ -2109,6 +2128,12 @@ function initDrawer() {
     document.getElementById('drawerFontVal').textContent=e.target.value;
     // Live-preview the new size on a dimension that's currently being placed
     if(dimPhase>=1) renderGhostFrame(mousePos);
+  });
+  document.getElementById('drawerFillet').addEventListener('input',e=>{
+    const v=parseInt(e.target.value,10);
+    document.getElementById('drawerFilletVal').textContent=v;
+    _orthoFillet=v;
+    if(isDrawing) renderGhostFrame(mousePos); else redraw();
   });
   document.getElementById('drawerUndo').onclick=()=>{
     if(isDrawing&&livePts.length>1){livePts.pop();renderGhostFrame(mousePos);return;}
