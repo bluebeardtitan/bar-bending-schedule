@@ -467,6 +467,7 @@ $('#barForm').addEventListener('submit', e=>{
   let verb='Added';
   if(editIndex>=0 && editIndex<rows.length){ rows[editIndex]=row; verb='Updated'; editIndex=-1; }
   else { rows.push(row); }
+  const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='➕ Add to Schedule';
   persist(); render();
   if(window._showFeedback) window._showFeedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
   $('#barForm').reset();
@@ -493,6 +494,7 @@ $('#bbsTable').addEventListener('click', e=>{
   else if(edit!==undefined){
     const i=Number(edit), r=rows[i]; if(!r) return;
     editIndex=i;
+    const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='✏️ Update Schedule';
     const inp=r.inputs||{};
     $('#member').value = r.member;
     $('#mark').value   = r.mark||'';
@@ -623,10 +625,25 @@ $('#exportCSV').addEventListener('click',()=>{
 /* =========================
    Save / Load JSON  (includes project info)
    ========================= */
+/* Pretty-print export but keep each row on a single line */
+function buildExportJSON(data){
+  const indent = (s,pad)=>s.replace(/\n/g,'\n'+pad);
+  const parts = [];
+  for(const [k,v] of Object.entries(data)){
+    if(k==='rows' && Array.isArray(v)){
+      const items = v.map(r=>'    '+JSON.stringify(r));
+      const body = items.length ? '[\n'+items.join(',\n')+'\n  ]' : '[]';
+      parts.push('  '+JSON.stringify(k)+': '+body);
+    } else {
+      parts.push('  '+JSON.stringify(k)+': '+indent(JSON.stringify(v,null,2),'  '));
+    }
+  }
+  return '{\n'+parts.join(',\n')+'\n}';
+}
 $('#saveJSON').addEventListener('click',()=>{
   const now = new Date();
   const ts  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`;
-  const blob = new Blob([JSON.stringify({rows,settings,projectInfo},null,2)],{type:'application/json'});
+  const blob = new Blob([buildExportJSON({rows,settings,projectInfo})],{type:'application/json'});
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
   a.download = `bbs_${ts}.json`;
