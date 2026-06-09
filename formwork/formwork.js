@@ -552,18 +552,22 @@ $('#bbsTable').addEventListener('click', e => {
     const mi = Number(moveBelow)
     const r = rows[mi]
     const label = r ? `${r.member||'item'} ${r.mark||''}` : 'this row'
-    const target = prompt(`Enter mark to move "${label}" below:`, `${r.mark||''}`)
+    const target = prompt(`Enter row serial to move "${label}" below (0 = top of schedule, 1-${rows.length} = row position):`, `${mi+1}`)
     if (target === null) return
-    if (target === '0') {
+    const ts = Number(target)
+    if (isNaN(ts) || ts < 0 || ts > rows.length || !Number.isInteger(ts)) {
+      alert(`Invalid. Enter a number between 0 and ${rows.length}.`)
+      return
+    }
+    if (ts === 0) {
       const [rm] = rows.splice(mi, 1)
       rows.unshift(rm)
       clampPage()
       persist(); render()
       return
     }
-    const ti = rows.findIndex(row => row.mark === target)
-    if (ti === -1) { alert(`No record found with mark "${target}"`); return }
-    if (ti === mi) { alert('Cannot move below itself'); return }
+    const ti = ts - 1
+    if (ti === mi) { alert('Row is already at that position'); return }
     const [rm] = rows.splice(mi, 1)
     const insertAt = mi < ti ? ti : ti + 1
     rows.splice(insertAt, 0, rm)
