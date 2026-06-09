@@ -302,6 +302,8 @@ function render(){
         <button class="btn small ghost options-btn" data-idx="${idx}" title="Options">⋮</button>
         <div class="options-menu" data-idx="${idx}">
           <button class="options-item" data-edit="${idx}">✏️ Edit</button>
+          <button class="options-item" data-dup="${idx}">📋 Duplicate</button>
+          <button class="options-item" data-dup-range="${idx}">🔢 Dup M–N Serial</button>
           <button class="options-item danger" data-del="${idx}">🗑️ Delete</button>
         </div>
       </td>`;
@@ -510,20 +512,37 @@ $('#barForm').addEventListener('submit', e=>{
   let verb='Added';
   if(editIndex>=0 && editIndex<rows.length){ lastEditedIndex=editIndex; rows[editIndex]=row; verb='Updated'; editIndex=-1; }
   else { rows.push(row); }
-  const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='➕ Add to Schedule';
+  sortRowsByMemberGroup()
   if (verb === 'Updated') {
-    if (navPersistTimer) clearTimeout(navPersistTimer)
-    navPersistTimer = setTimeout(() => {
-      navPersistTimer = null; lastEditedIndex = -1
-      updateRecordNav()
-    }, 5000)
+    lastEditedIndex = -1
+    if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
   }
+  const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='➕ Add to Schedule';
   persist(); render();
   if(window._showFeedback) window._showFeedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
   $('#barForm').reset();
   clearShapeUpload();
   showShape('straight'); showQty('manual'); resetCustom(); updateCustomPreview();
 });
+
+/* =========================
+   Group members & sort inside groups
+   ========================= */
+function sortRowsByMemberGroup() {
+  const groups = [], memberOrder = []
+  for (const r of rows) {
+    const key = r.member
+    if (!memberOrder.includes(key)) {
+      memberOrder.push(key)
+      groups.push({ member: key, items: [] })
+    }
+    groups[memberOrder.indexOf(key)].items.push(r)
+  }
+  for (const g of groups) {
+    g.items.sort((a, b) => (a.mark || '').localeCompare(b.mark || '', undefined, { numeric: true }))
+  }
+  rows = groups.flatMap(g => g.items)
+}
 
 /* =========================
    Edit & Delete
@@ -543,9 +562,35 @@ $('#bbsTable').addEventListener('click', e=>{
     }
     return
   }
-  const del=e.target.dataset.del, edit=e.target.dataset.edit, enlarge=e.target.dataset.enlarge;
+  const del=e.target.dataset.del, edit=e.target.dataset.edit, enlarge=e.target.dataset.enlarge,
+        dup=e.target.dataset.dup, dupRange=e.target.dataset.dupRange;
   if(enlarge!==undefined){ const r=rows[Number(enlarge)]; if(r&&(r.shapeVec||r.shapeImg)) openSketchLightbox(r); return; }
-  if(del!==undefined){
+  if(dup!==undefined){
+    closeOptionsMenus()
+    const di=Number(dup)
+    const copy=structuredClone(rows[di])
+    copy.createdAt=Date.now()
+    rows.splice(di+1,0,copy)
+    persist(); render()
+  }else if(dupRange!==undefined){
+    closeOptionsMenus()
+    const di=Number(dupRange)
+    const r=rows[di]
+    const label=r?`${r.member||'item'} ${r.mark||''}`:'this row'
+    const m=prompt(`From serial #? (${label})`,'1'); if(m===null) return
+    const n=prompt('To serial #?','5'); if(n===null) return
+    const start=parseInt(m,10), end=parseInt(n,10)
+    if(isNaN(start)||isNaN(end)||start<1||end<start){ alert('Invalid range'); return }
+    const inserts=[]
+    for(let s=start;s<=end;s++){
+      const copy=structuredClone(r)
+      copy.createdAt=Date.now()+s
+      copy.mark=(copy.mark||'')+'-'+String(s).padStart(2,'0')
+      inserts.push(copy)
+    }
+    rows.splice(di+1,0,...inserts)
+    persist(); render()
+  }else if(del!==undefined){
     const r=rows[Number(del)];
     const label=r?`${r.member||'item'}${r.mark?' ('+r.mark+')':''}`:'this row';
     if(!confirm(`Delete ${label} from the schedule?`)) return;
