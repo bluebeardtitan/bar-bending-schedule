@@ -455,7 +455,17 @@ $('#memberForm').addEventListener('submit', e => {
     lastEditedIndex = -1
     if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
   }
-  const submitBtn = document.querySelector('.submit-btn'); if (submitBtn) submitBtn.textContent = '➕ Add to Schedule';
+  const submitBtn = document.querySelector('.submit-btn');
+  if (submitBtn) {
+    submitBtn.textContent = '✅ Updated!';
+    submitBtn.classList.add('active');
+    submitBtn.disabled = true;
+    setTimeout(() => {
+      submitBtn.textContent = '➕ Add to Schedule';
+      submitBtn.classList.remove('active');
+      submitBtn.disabled = false;
+    }, 5000);
+  }
   persist(); render();
   feedback(`✔ ${verb} ${row.member} · ${fmt3(row.volM3)} m³ · ${fmt3(row.fwM2)} m² formwork`, 'ok');
 

@@ -141,21 +141,25 @@ const CL = {
   L: ({A,B,angle,dia}) => A + B - bendDeduction(angle,dia),
   U: ({A,B,C,dia}) => A + B + C - 2*bendDeduction(90,dia),
   stirrup: ({A,B,cover,angle,dia,type,diaCirc,side}) => {
-    const ded  = settings.ded[angle]  || 0;
-    const hook = settings.hooks[angle]|| 0;
-    if(type==='2'){ const a=A-2*cover+dia, b=B-2*cover+dia; return 2*a+2*b-4*ded+2*hook; }
-    if(type==='4'){ const a=A-2*cover+dia, b=B-2*cover+dia; return 2*a+4*b-6*ded+4*hook; }
-    if(type==='6'){ const a=A-2*cover+dia, b=B-2*cover+dia; return 2*a+6*b-8*ded+6*hook; }
-    if(type==='circle'){ const d=diaCirc-2*cover+dia; return Math.PI*d-ded+2*hook; }
-    if(type==='diamond'){ const s=side-2*cover+dia; return 4*s-4*ded+2*hook; }
+    const ded  = (settings.ded[angle]  || 0) * dia;
+    const hook = (settings.hooks[angle]|| 0) * dia;
+    if(type==='2'){ const a=A-2*cover, b=B-2*cover; return 2*a+2*b-4*ded+2*hook; }
+    if(type==='4'){ const a=A-2*cover, b=B-2*cover; return 2*a+4*b-6*ded+4*hook; }
+    if(type==='6'){ const a=A-2*cover, b=B-2*cover; return 2*a+6*b-8*ded+6*hook; }
+    if(type==='circle'){ const d=diaCirc-2*cover; return Math.PI*d-ded+2*hook; }
+    if(type==='diamond'){ const s=side-2*cover; return 4*s-4*ded+2*hook; }
     return 0;
   },
-  circle:  ({dia,cover,diaBar}) => Math.PI*(dia+2*cover-diaBar),
-  spiral:  ({dia,cover,pitch,turns,diaBar}) => {
-    const D = dia+2*cover-diaBar;
+  circle:  ({dia,diaBar}) => Math.PI*(dia+diaBar),
+  spiral:  ({dia,pitch,turns,diaBar}) => {
+    const D = dia+diaBar;
     return Math.sqrt((Math.PI*D)**2 + pitch**2) * turns;
   },
-  crank:   ({span,depth,angle,dia}) => span + (depth/Math.sin(angle*Math.PI/180))*2 - 2*bendDeduction(angle,dia),
+  crank:   ({span,depth,angle,dia}) => {
+    const rad = angle*Math.PI/180;
+    const extra = depth * (1/Math.sin(rad) - 1/Math.tan(rad));
+    return span + 2*extra - 2*bendDeduction(angle,dia);
+  },
   chair:   ({height,top,base}) => 2*height + top + base,
   'hook-semi': ({len, ends, dia}) => len + (ends==='both'?2:1) * hookLength(180, dia),
   'hook-L':    ({len, ends, dia}) => len + (ends==='both'?2:1) * hookLength(90,  dia),
@@ -182,25 +186,26 @@ const CLcalc = {
   U: ({A,B,C,dia}) => { const d=bendDeduction(90,dia);
     return `${fmtN(A)} + ${fmtN(B)} + ${fmtN(C)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(A+B+C-2*d)}`; },
   stirrup: ({A,B,cover,angle,dia,type,diaCirc,side}) => {
-    const ded=settings.ded[angle]||0, hook=settings.hooks[angle]||0;
-    if(type==='2'){ const a=A-2*cover+dia, b=B-2*cover+dia;
+    const ded=(settings.ded[angle]||0)*dia, hook=(settings.hooks[angle]||0)*dia;
+    if(type==='2'){ const a=A-2*cover, b=B-2*cover;
       return `2${TIMES}${fmtN(a)} + 2${TIMES}${fmtN(b)} ${MINUS} 4${TIMES}${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(2*a+2*b-4*ded+2*hook)}`; }
-    if(type==='4'){ const a=A-2*cover+dia, b=B-2*cover+dia;
+    if(type==='4'){ const a=A-2*cover, b=B-2*cover;
       return `2${TIMES}${fmtN(a)} + 4${TIMES}${fmtN(b)} ${MINUS} 6${TIMES}${fmtN(ded)} + 4${TIMES}${fmtN(hook)} = ${fmt0(2*a+4*b-6*ded+4*hook)}`; }
-    if(type==='6'){ const a=A-2*cover+dia, b=B-2*cover+dia;
+    if(type==='6'){ const a=A-2*cover, b=B-2*cover;
       return `2${TIMES}${fmtN(a)} + 6${TIMES}${fmtN(b)} ${MINUS} 8${TIMES}${fmtN(ded)} + 6${TIMES}${fmtN(hook)} = ${fmt0(2*a+6*b-8*ded+6*hook)}`; }
-    if(type==='circle'){ const d=diaCirc-2*cover+dia;
+    if(type==='circle'){ const d=diaCirc-2*cover;
       return `π${TIMES}${fmtN(d)} ${MINUS} ${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(Math.PI*d-ded+2*hook)}`; }
-    if(type==='diamond'){ const s=side-2*cover+dia;
+    if(type==='diamond'){ const s=side-2*cover;
       return `4${TIMES}${fmtN(s)} ${MINUS} 4${TIMES}${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(4*s-4*ded+2*hook)}`; }
     return '';
   },
-  circle:  ({dia,cover,diaBar}) => { const d=dia+2*cover-diaBar;
-    return `π(${fmtN(dia)} + 2${TIMES}${fmtN(cover)} ${MINUS} ${fmtN(diaBar)}) = ${fmt0(Math.PI*d)}`; },
-  spiral:  ({dia,cover,pitch,turns,diaBar}) => { const D=dia+2*cover-diaBar;
+  circle:  ({dia,diaBar}) => { const d=dia+diaBar;
+    return `π(${fmtN(dia)} + ${fmtN(diaBar)}) = ${fmt0(Math.PI*d)}`; },
+  spiral:  ({dia,pitch,turns,diaBar}) => { const D=dia+diaBar;
     return `√((π${TIMES}${fmtN(D)})² + ${fmtN(pitch)}²) ${TIMES} ${fmtN(turns)} = ${fmt0(Math.sqrt((Math.PI*D)**2+pitch**2)*turns)}`; },
-  crank:   ({span,depth,angle,dia}) => { const d=bendDeduction(angle,dia), ext=depth/Math.sin(angle*Math.PI/180);
-    return `${fmtN(span)} + 2${TIMES}${fmtN(ext)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(span+ext*2-2*d)}`; },
+  crank:   ({span,depth,angle,dia}) => {
+    const rad=angle*Math.PI/180, extra=depth*(1/Math.sin(rad)-1/Math.tan(rad)), d=bendDeduction(angle,dia);
+    return `${fmtN(span)} + 2${TIMES}${fmtN(extra)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(span+extra*2-2*d)}`; },
   chair:   ({height,top,base}) =>
     `2${TIMES}${fmtN(height)} + ${fmtN(top)} + ${fmtN(base)} = ${fmt0(2*height+top+base)}`,
   'hook-semi': ({len,ends,dia}) => { const n=ends==='both'?2:1, h=hookLength(180,dia);
@@ -444,11 +449,11 @@ $('#barForm').addEventListener('submit', e=>{
     else if(type==='diamond'){ a={side:Number($('#S_side').value),cover,angle,dia,type}; }
     cl=CL.stirrup(a); clCalc=CLcalc.stirrup(a); shapeLabel=`Stirrup ${type}-legged`;
   }else if(shape==='circle'){
-    const diaVal=Number($('#C_dia').value), a={dia:diaVal,cover:Number($('#C_cover').value),diaBar:dia};
+    const diaVal=Number($('#C_dia').value), a={dia:diaVal,diaBar:dia};
     cl=CL.circle(a); clCalc=CLcalc.circle(a); shapeLabel=`Circle ⌀${diaVal}`;
   }else if(shape==='spiral'){
     const diaVal=Number($('#SP_dia').value),turns=Number($('#SP_turns').value);
-    const a={dia:diaVal,pitch:Number($('#SP_pitch').value),turns,cover:Number($('#SP_cover').value),diaBar:dia};
+    const a={dia:diaVal,pitch:Number($('#SP_pitch').value),turns,diaBar:dia};
     cl=CL.spiral(a); clCalc=CLcalc.spiral(a); shapeLabel=`Spiral ⌀${diaVal} (${turns} turns)`;
   }else if(shape==='crank'){
     const a={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value),dia};
@@ -502,8 +507,8 @@ $('#barForm').addEventListener('submit', e=>{
     else if(type==='circle'){ row.inputs.diaCirc=Number($('#S_diaCirc').value); }
     else if(type==='diamond'){ row.inputs.side=Number($('#S_side').value); }
   }
-  else if(shape==='circle'){ row.inputs={diaVal:Number($('#C_dia').value),cover:Number($('#C_cover').value)}; }
-  else if(shape==='spiral'){ row.inputs={diaVal:Number($('#SP_dia').value),pitch:Number($('#SP_pitch').value),turns:Number($('#SP_turns').value),cover:Number($('#SP_cover').value)}; }
+  else if(shape==='circle'){ row.inputs={diaVal:Number($('#C_dia').value)}; }
+  else if(shape==='spiral'){ row.inputs={diaVal:Number($('#SP_dia').value),pitch:Number($('#SP_pitch').value),turns:Number($('#SP_turns').value)}; }
   else if(shape==='crank'){  row.inputs={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value)}; }
   else if(shape==='chair'){     row.inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)}; }
   else if(shape==='hook-semi'){ row.inputs={len:Number($('#HS_len').value),ends:$('#HS_ends').value}; }
@@ -518,7 +523,17 @@ $('#barForm').addEventListener('submit', e=>{
     lastEditedIndex = -1
     if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
   }
-  const submitBtn=document.querySelector('.submit-btn'); if(submitBtn) submitBtn.textContent='➕ Add to Schedule';
+  const submitBtn=document.querySelector('.submit-btn');
+  if (submitBtn) {
+    submitBtn.textContent = '✅ Updated!';
+    submitBtn.classList.add('active');
+    submitBtn.disabled = true;
+    setTimeout(() => {
+      submitBtn.textContent = '➕ Add to Schedule';
+      submitBtn.classList.remove('active');
+      submitBtn.disabled = false;
+    }, 5000);
+  }
   persist(); render();
   if(window._showFeedback) window._showFeedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
   $('#barForm').reset();
@@ -680,8 +695,8 @@ function loadRow(i) {
     else if (inp.type === 'circle') { $('#S_diaCirc').value = inp.diaCirc||'' }
     else if (inp.type === 'diamond') { $('#S_side').value = inp.side||'' }
   }
-  if (r.shape === 'circle')  { $('#C_dia').value = inp.diaVal||''; $('#C_cover').value = inp.cover||25 }
-  if (r.shape === 'spiral')  { $('#SP_dia').value = inp.diaVal||''; $('#SP_pitch').value = inp.pitch||''; $('#SP_turns').value = inp.turns||''; $('#SP_cover').value = inp.cover||25 }
+  if (r.shape === 'circle')  { $('#C_dia').value = inp.diaVal||'' }
+  if (r.shape === 'spiral')  { $('#SP_dia').value = inp.diaVal||''; $('#SP_pitch').value = inp.pitch||''; $('#SP_turns').value = inp.turns||'' }
   if (r.shape === 'crank')   { $('#CR_span').value = inp.span||''; $('#CR_depth').value = inp.depth||''; $('#CR_angle').value = inp.angle||45 }
   if (r.shape === 'chair')   { $('#CH_height').value = inp.height||''; $('#CH_top').value = inp.top||''; $('#CH_base').value = inp.base||'' }
   if (r.shape === 'hook-semi') { $('#HS_len').value = inp.len||''; $('#HS_ends').value = inp.ends||'both' }
