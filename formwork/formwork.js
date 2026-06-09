@@ -379,6 +379,7 @@ function render(){
           <button class="options-item" data-edit="${idx}">✏️ Edit</button>
           <button class="options-item" data-dup="${idx}">📋 Duplicate</button>
           <button class="options-item" data-dup-range="${idx}">🔢 Dup M–N Serial</button>
+          <button class="options-item" data-move-below="${idx}">📥 Move Below Serial</button>
           <button class="options-item danger" data-del="${idx}">🗑️ Delete</button>
         </div>
       </td>`;
@@ -505,7 +506,7 @@ $('#bbsTable').addEventListener('click', e => {
     return
   }
   const del = e.target.dataset.del, edit = e.target.dataset.edit, enlarge = e.target.dataset.enlarge,
-        dup = e.target.dataset.dup, dupRange = e.target.dataset.dupRange;
+        dup = e.target.dataset.dup, dupRange = e.target.dataset.dupRange, moveBelow = e.target.dataset.moveBelow;
   if (enlarge !== undefined) { const r = rows[Number(enlarge)]; if (r && (r.shapeVec||r.shapeImg)) openSketchLightbox(r); return; }
   if (dup !== undefined) {
     closeOptionsMenus()
@@ -531,6 +532,28 @@ $('#bbsTable').addEventListener('click', e => {
       inserts.push(copy)
     }
     rows.splice(di + 1, 0, ...inserts)
+    persist(); render()
+  } else if (moveBelow !== undefined) {
+    closeOptionsMenus()
+    const mi = Number(moveBelow)
+    const r = rows[mi]
+    const label = r ? `${r.member||'item'} ${r.mark||''}` : 'this row'
+    const target = prompt(`Enter mark to move "${label}" below:`, `${r.mark||''}`)
+    if (target === null) return
+    if (target === '0') {
+      const [rm] = rows.splice(mi, 1)
+      rows.unshift(rm)
+      clampPage()
+      persist(); render()
+      return
+    }
+    const ti = rows.findIndex(row => row.mark === target)
+    if (ti === -1) { alert(`No record found with mark "${target}"`); return }
+    if (ti === mi) { alert('Cannot move below itself'); return }
+    const [rm] = rows.splice(mi, 1)
+    const insertAt = mi < ti ? ti : ti + 1
+    rows.splice(insertAt, 0, rm)
+    clampPage()
     persist(); render()
   } else if (del !== undefined) {
     const r = rows[Number(del)];
