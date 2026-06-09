@@ -529,7 +529,7 @@ $('#barForm').addEventListener('submit', e=>{
   }
   const submitBtn=document.querySelector('.submit-btn');
   if (submitBtn) {
-    submitBtn.textContent = '✅ Updated!';
+    submitBtn.textContent = verb === 'Added' ? '✅ Added!' : '✅ Updated!';
     submitBtn.classList.add('active');
     submitBtn.disabled = true;
     setTimeout(() => {
