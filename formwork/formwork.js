@@ -452,8 +452,12 @@ $('#memberForm').addEventListener('submit', e => {
   else rows.push(row);
   sortRowsByMemberGroup()
   if (verb === 'Updated') {
-    lastEditedIndex = -1
     if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
+    navPersistTimer = setTimeout(() => {
+      navPersistTimer = null
+      lastEditedIndex = -1
+      updateRecordNav()
+    }, 5000)
   }
   const submitBtn = document.querySelector('.submit-btn');
   if (submitBtn) {
