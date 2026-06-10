@@ -173,9 +173,28 @@
           pdf.setFontSize(pt);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(r, g, b);
-          const opts = { baseline: 'middle', align: e.anchor === 'l' ? 'left' : 'center' };
-          if (e.ang) opts.angle = -e.ang * 180 / Math.PI;
-          pdf.text(String(e.t || ''), mx(e.x), my(e.y), opts);
+          const cx = mx(e.x), cy = my(e.y);            // intended label centre
+          const rot = e.ang || 0;
+          if (e.anchor === 'l') {
+            // Leader text: left-aligned, never rotated.
+            pdf.text(String(e.t || ''), cx, cy, { baseline: 'middle', align: 'left' });
+          } else if (Math.abs(Math.sin(rot)) < 1e-6) {
+            // Horizontal centred label — jsPDF handles this correctly.
+            pdf.text(String(e.t || ''), cx, cy, { baseline: 'middle', align: 'center' });
+          } else {
+            // Rotated centred label. jsPDF applies `align` along page-X and
+            // `baseline` along page-Y irrespective of `angle`, so rotated (worst
+            // near-vertical) labels slide off-centre on BOTH axes. Place the
+            // alphabetic-baseline origin ourselves so the glyph block's visual
+            // centre lands on (cx,cy) at any angle, matching the on-canvas label.
+            const w = pdf.getTextWidth(String(e.t || ''));        // advance width, mm
+            const vMid = 0.35 * pt * MM_PER_PT;                    // baseline → visual middle
+            const dx = Math.cos(rot), dy = Math.sin(rot);          // reading direction
+            const ux = Math.sin(rot), uy = -Math.cos(rot);         // glyph-top (perp) direction
+            const ox = cx - (w / 2) * dx - vMid * ux;
+            const oy = cy - (w / 2) * dy - vMid * uy;
+            pdf.text(String(e.t || ''), ox, oy, { align: 'left', angle: -rot * 180 / Math.PI });
+          }
           break;
         }
       }

@@ -686,7 +686,7 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
       drawDimLeader(ctx, mapDim(dm.origin), mapDim(dm.elbow), dm.text?mapDim(dm.text):null, dm.label||'', sizePx);
     } else if (dm.perp!=null) {
       const a=mapDim(dm.from), b=mapDim(dm.to);
-      drawDimAligned(ctx, a, b, dm.perp*dimUnit, dm.label||'', sizePx);
+      drawDimAligned(ctx, a, b, dm.perp*dimUnit, dm.label||'', sizePx, dm.pos);
     } else {
       // Legacy hand-authored aligned dim: fixed offset + [dx,dy] label nudge
       const a=mapDim(dm.from), b=mapDim(dm.to);
@@ -717,17 +717,24 @@ function _dimArrow(ctx, px, py, ax, ay, flip, size) {
   ctx.closePath(); ctx.fill();
 }
 
-function _dimLabel(ctx, mx, my, label, angle, size) {
+function _dimLabel(ctx, mx, my, label, angle, size, pos) {
   const fs = size || DIM_BASE;
   ctx.save();
   ctx.font = `bold ${fs}px ui-monospace,Consolas,monospace`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const tw = ctx.measureText(label).width + fs*0.7;
   const bh = fs*0.82;   // half background-box height
-  ctx.translate(mx, my);
   // Keep text readable — flip if angle would render upside-down
   const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
   const rot = (a > Math.PI/2 && a < Math.PI*1.5) ? angle + Math.PI : angle;
+  // Push the label clear of the dimension line along the text's own reading-up
+  // direction (sin rot, -cos rot). This keeps a true perpendicular gap at EVERY
+  // orientation: the old `my - ny*8` nudge only moved in screen-Y, so a
+  // near-vertical line got ~zero offset and the label sat on the line/arrows —
+  // which read as the label being knocked off-centre.
+  const sgn = pos === 'below' ? -1 : pos === 'above' ? 1 : 0;   // 'on' / undefined → centred
+  const gap = sgn * (bh + 2);
+  ctx.translate(mx + Math.sin(rot)*gap, my - Math.cos(rot)*gap);
   ctx.rotate(rot);
   ctx.fillStyle = '#fff';
   ctx.fillRect(-tw/2, -bh, tw, bh*2);
@@ -739,7 +746,7 @@ function _dimLabel(ctx, mx, my, label, angle, size) {
 /* ── 1. ALIGNED dimension — true point-to-point distance ──
    Clicks: p1, p2, then offset (perpendicular side).
    Renders: two extension lines + one dimension line with arrows + label. */
-function drawDimAligned(ctx, p1, p2, offset, label, size) {
+function drawDimAligned(ctx, p1, p2, offset, label, size, pos) {
   const dx = p2.x - p1.x, dy = p2.y - p1.y;
   const len = Math.hypot(dx, dy);
   if (len < 4) return;
@@ -774,10 +781,10 @@ function drawDimAligned(ctx, p1, p2, offset, label, size) {
   _dimArrow(ctx, d1.x, d1.y, ax, ay, -1, size);
   _dimArrow(ctx, d2.x, d2.y, ax, ay,  1, size);
 
-  // Label at midpoint, rotated along dim line
+  // Label at midpoint, offset above/on/below the dim line (default above)
   const mx = (d1.x+d2.x)/2, my = (d1.y+d2.y)/2;
   const ang = Math.atan2(dy, dx);
-  _dimLabel(ctx, mx, my - ny*8, label, ang, size);
+  _dimLabel(ctx, mx, my, label, ang, size, pos || 'above');
 
   ctx.restore();
 }
@@ -1029,7 +1036,15 @@ const drawerHTML = `
         <div style="display:flex;align-items:center;gap:6px">
           <input type="range" id="drawerFontSize" min="8" max="28" value="13" style="flex:1">
           <span id="drawerFontVal" style="font-size:11px;min-width:18px;color:var(--brand);font-weight:700">13</span>
-          <span style="font-size:10px;color:var(--muted)">px</span>
+          <span style="font-size:10px;color:var(--muted)">pt</span>
+        </div>
+
+        <div class="dp-divider"></div>
+        <div class="dp-sub">Label Position <span style="color:var(--muted);font-weight:400">· aligned dim</span></div>
+        <div id="drawerLabelPos" style="display:flex;gap:4px" role="group" aria-label="Aligned dimension label position">
+          <button type="button" class="btn small primary lblpos" data-pos="above" style="flex:1;font-size:10px;padding:4px 4px">↑ Above</button>
+          <button type="button" class="btn small ghost lblpos"   data-pos="on"    style="flex:1;font-size:10px;padding:4px 4px">— On</button>
+          <button type="button" class="btn small ghost lblpos"   data-pos="below" style="flex:1;font-size:10px;padding:4px 4px">↓ Below</button>
         </div>
       </div>
 
@@ -1125,7 +1140,19 @@ window._drawerActiveStyle = 'tor';
 let _stageW = 700, _stageH = 460;
 
 function getBarSize()  { return parseInt(document.getElementById('drawerBarSize').value, 10); }
-function getFontSize() { return parseInt(document.getElementById('drawerFontSize').value, 10); }
+/* Font slider is authored in POINTS (min 8pt); every renderer/exporter works in
+   pixels, so convert once here at the UI boundary.
+   CSS reference: 1pt = 1/72in, 1px = 1/96in ⇒ 1pt = 96/72 px. */
+const PT_TO_PX = 96 / 72;
+function getFontSize() {
+  const pt = parseInt(document.getElementById('drawerFontSize').value, 10) || 8;
+  return Math.round(pt * PT_TO_PX * 10) / 10;
+}
+/* Which side of an aligned dimension line its label sits on: above | on | below. */
+function getLabelPos() {
+  const el = document.querySelector('#drawerLabelPos .lblpos.primary');
+  return el ? el.dataset.pos : 'above';
+}
 function getAnnot()    { return document.getElementById('drawerAnnotText').value.trim() || 'Label'; }
 
 function getXY(e) {
@@ -1165,7 +1192,7 @@ function buildShapeDefinition(meta) {
       for(let i=0;i<steps;i++){const a=i/steps*Math.PI*2; pts.push({x:cmd.cx+Math.cos(a)*cmd.rx,y:cmd.cy+Math.sin(a)*cmd.ry});}
       rawSegments.push({pts,style:'curve',closed:true});
     } else if (cmd.type === 'dim-aligned') {
-      rawDims.push({ kind:'aligned', pts:[{x:cmd.p1.x,y:cmd.p1.y},{x:cmd.p2.x,y:cmd.p2.y}], offset:cmd.offset, label:cmd.label||'', size:cmd.size });
+      rawDims.push({ kind:'aligned', pts:[{x:cmd.p1.x,y:cmd.p1.y},{x:cmd.p2.x,y:cmd.p2.y}], offset:cmd.offset, label:cmd.label||'', size:cmd.size, pos:cmd.pos });
     } else if (cmd.type === 'dim-angular') {
       rawDims.push({ kind:'angular', pts:[{x:cmd.vertex.x,y:cmd.vertex.y},{x:cmd.ptA.x,y:cmd.ptA.y},{x:cmd.ptB.x,y:cmd.ptB.y}], label:cmd.label||'', size:cmd.size });
     } else if (cmd.type === 'dim-leader') {
@@ -1210,7 +1237,7 @@ function buildShapeDefinition(meta) {
       if(d.pts[2]) o.text=np(d.pts[2]);
       return o;
     }
-    return {from:np(d.pts[0]), to:np(d.pts[1]), perp:frac(d.offset), label:d.label||'A', size:frac(d.size)};
+    return {from:np(d.pts[0]), to:np(d.pts[1]), perp:frac(d.offset), label:d.label||'A', size:frac(d.size), pos:d.pos};
   });
   // Free-standing text annotations: normalise anchor + font size like dims.
   const texts=rawTexts.map(t=>{
@@ -1263,6 +1290,7 @@ function formatCompactShape(def) {
       } else {
         parts.push(`"from": ${ja(d.from)}, "to": ${ja(d.to)}`);
         if(d.perp!=null) parts.push(`"perp": ${d.perp}`);
+        if(d.pos && d.pos!=='above') parts.push(`"pos": ${q(d.pos)}`);
       }
       parts.push(`"label": ${q(d.label)}`);
       if(d.size!=null) parts.push(`"size": ${d.size}`);
@@ -1463,7 +1491,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot(), cmd.size);
+        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot(), cmd.size, cmd.pos);
       }, listening: false,
     }));
 
@@ -1567,7 +1595,7 @@ function renderGhostFrame(cursorPt) {
       : -30;
     layer.add(new Konva.Shape({
       opacity: 0.6,
-      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot(), getFontSize()); },
+      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot(), getFontSize(), getLabelPos()); },
       listening: false,
     }));
     // Anchor dots
@@ -1813,7 +1841,7 @@ function onDown(e) {
     dimPts.push(dimOrtho && dimPts.length===1 ? orthoSnap(pt, dimPts[0]) : pt);
     if (dimPts.length === 3) {
       const [p1,p2,offPt] = dimPts;
-      history.push({type:'dim-aligned', p1, p2, offset: _alignedOffset(p1,p2,offPt), label:getAnnot(), size:getFontSize()});
+      history.push({type:'dim-aligned', p1, p2, offset: _alignedOffset(p1,p2,offPt), label:getAnnot(), size:getFontSize(), pos:getLabelPos()});
       dimPhase=0; dimPts=[]; dimOrtho=false; redraw();
     } else {
       dimPhase = dimPts.length;
@@ -2109,6 +2137,12 @@ function initDrawer() {
     // Live-preview the new size on a dimension that's currently being placed
     if(dimPhase>=1) renderGhostFrame(mousePos);
   });
+  document.querySelectorAll('#drawerLabelPos .lblpos').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('#drawerLabelPos .lblpos').forEach(x=>{ x.classList.remove('primary'); x.classList.add('ghost'); });
+    b.classList.remove('ghost'); b.classList.add('primary');
+    // Live-preview placement on an aligned dim that's currently being placed
+    if(dimPhase>=1) renderGhostFrame(mousePos);
+  }));
   document.getElementById('drawerFillet').addEventListener('input',e=>{
     const v=parseInt(e.target.value,10);
     document.getElementById('drawerFilletVal').textContent=v;
@@ -2466,7 +2500,7 @@ function shapeDefToCommands(def, diam, style){
         const off=dm.off||[0,0], dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
         offset=off[0]*(-dy/len)+off[1]*(dx/len);
       }
-      cmds.push({ type:'dim-aligned', p1:a, p2:b, offset, label:dm.label||'', size:sizePx });
+      cmds.push({ type:'dim-aligned', p1:a, p2:b, offset, label:dm.label||'', size:sizePx, pos:dm.pos });
     }
   });
   (def.texts||[]).forEach(t=>{
@@ -2604,17 +2638,21 @@ function _arrowPoly(px, py, ax, ay, flip, size) {
 }
 
 /* Rotated white label box + centred text, mirroring _dimLabel() */
-function _labelEls(mx, my, label, angle, size) {
+function _labelEls(mx, my, label, angle, size, pos) {
   const fs = size || DIM_BASE;
   const a = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
   const rot = (a > Math.PI/2 && a < Math.PI*1.5) ? angle + Math.PI : angle;
   const tw = label.length * fs * 0.6 + fs * 0.7;
   const bh = fs * 0.82;
+  // Same reading-up perpendicular offset as the on-screen _dimLabel.
+  const sgn = pos === 'below' ? -1 : pos === 'above' ? 1 : 0;
+  const gap = sgn * (bh + 2);
+  const lx0 = mx + Math.sin(rot)*gap, ly0 = my - Math.cos(rot)*gap;
   const c = Math.cos(rot), s = Math.sin(rot);
-  const corner = (lx, ly) => [mx + lx*c - ly*s, my + lx*s + ly*c];
+  const corner = (lx, ly) => [lx0 + lx*c - ly*s, ly0 + lx*s + ly*c];
   return [
     { k:'fill', col:'#fff', d:[corner(-tw/2,-bh), corner(tw/2,-bh), corner(tw/2,bh), corner(-tw/2,bh)] },
-    { k:'text', x:mx, y:my, t:label, sz:fs, ang:rot, col:DIM_GRAY, anchor:'c' },
+    { k:'text', x:lx0, y:ly0, t:label, sz:fs, ang:rot, col:DIM_GRAY, anchor:'c' },
   ];
 }
 
@@ -2624,7 +2662,7 @@ function _dotPoly(cx, cy, r) {
   return { k:'fill', col:DIM_GRAY, d };
 }
 
-function _emitAligned(out, p1, p2, offset, label, size) {
+function _emitAligned(out, p1, p2, offset, label, size, pos) {
   const dx = p2.x-p1.x, dy = p2.y-p1.y, len = Math.hypot(dx, dy);
   if (len < 4) return;
   const ax = dx/len, ay = dy/len, nx = -ay, ny = ax;
@@ -2636,7 +2674,7 @@ function _emitAligned(out, p1, p2, offset, label, size) {
   out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[d1.x, d1.y], b:[d2.x, d2.y] });
   out.push(_arrowPoly(d1.x, d1.y, ax, ay, -1, size));
   out.push(_arrowPoly(d2.x, d2.y, ax, ay,  1, size));
-  if (label) _labelEls((d1.x+d2.x)/2, (d1.y+d2.y)/2 - ny*8, label, Math.atan2(dy, dx), size).forEach(e => out.push(e));
+  if (label) _labelEls((d1.x+d2.x)/2, (d1.y+d2.y)/2, label, Math.atan2(dy, dx), size, pos || 'above').forEach(e => out.push(e));
 }
 
 function _emitAngular(out, vertex, ptA, ptB, label, size) {
@@ -2716,7 +2754,7 @@ function buildVectorModel() {
     } else if (cmd.type === 'text') {
       el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz:cmd.size||13, col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
-      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size);
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
       _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
     } else if (cmd.type === 'dim-leader') {
@@ -2841,7 +2879,7 @@ function buildTexturedModel(hist) {
     } else if (cmd.type === 'text') {
       el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz:cmd.size||13, col:'#555', anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
-      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size);
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
       _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
     } else if (cmd.type === 'dim-leader') {
