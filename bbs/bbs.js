@@ -157,6 +157,7 @@ const CL = {
     for(const it of items){
       if(it.type==='leg')  t += Number(it.len||0);
       if(it.type==='bend'){ t -= bendDeduction(it.angle,dia); if(it.hook) t += hookLength(it.angle,dia); }
+      if(it.type==='hook') t += hookLength(it.angle,dia);
     }
     return t;
   }
@@ -211,6 +212,7 @@ const CLcalc = {
       if(it.type==='leg'){ const L=Number(it.len||0); v+=L; s+=(first?'':' + ')+fmtN(L); first=false; }
       if(it.type==='bend'){ const d=bendDeduction(it.angle,dia); v-=d; s+=` ${MINUS} ${fmtN(d)}`;
         if(it.hook){ const h=hookLength(it.angle,dia); v+=h; s+=` + ${fmtN(h)}`; } }
+      if(it.type==='hook'){ const h=hookLength(it.angle,dia); v+=h; s+=(first?'':' + ')+fmtN(h)+'(hook)'; first=false; }
     }
     return `${s.trim()} = ${fmt0(v)}`;
   }
@@ -337,7 +339,7 @@ $('#shape').addEventListener('change', e=>showShape(e.target.value));
 $('#qtyMode').addEventListener('change', e=>showQty(e.target.value));
 $('#S_type').addEventListener('change', () => {
   const isCirc = $('#S_type').value === 'circle';
-  document.querySelector('.fg-stirrup-rect').classList.toggle('hidden', isCirc);
+  document.querySelectorAll('.fg-stirrup-rect').forEach(el => el.classList.toggle('hidden', isCirc));
   document.querySelector('.fg-stirrup-circ').classList.toggle('hidden', !isCirc);
 });
 
@@ -350,8 +352,9 @@ function addLeg(len=''){
   row.className='custom-item';
   row.innerHTML = `
     <span class="pill">Leg ${customItems.filter(x=>x.type==='leg').length}</span>
-    <input type="number" min="1" step="1" value="${len}" placeholder="Length (mm)" data-kind="leg" data-idx="${idx}" style="flex:1;min-width:100px" />
-    <button type="button" class="btn small ghost" data-remove="${idx}" style="width:auto">✕</button>
+    <input type="number" min="1" step="1" value="${len}" placeholder="Length" data-kind="leg" data-idx="${idx}" />
+    <span class="ci-unit">mm</span>
+    <button type="button" class="btn small ghost" data-remove="${idx}">✕</button>
   `;
   $('#customList').appendChild(row);
 }
@@ -361,25 +364,44 @@ function addBend(angle=90, hook=false){
   row.className='custom-item';
   row.innerHTML = `
     <span class="pill">Bend</span>
-    <select data-kind="bend-angle" data-idx="${idx}" style="flex:1;min-width:80px">
+    <span class="ci-unit">Angle</span>
+    <select data-kind="bend-angle" data-idx="${idx}">
       <option value="45" ${angle==45?'selected':''}>45°</option>
       <option value="90" ${angle==90?'selected':''}>90°</option>
       <option value="135" ${angle==135?'selected':''}>135°</option>
       <option value="180" ${angle==180?'selected':''}>180°</option>
     </select>
-    <label style="display:flex;gap:4px;align-items:center;font-size:12px;white-space:nowrap">
-      <input type="checkbox" data-kind="hook" data-idx="${idx}" ${hook?'checked':''} style="width:auto"> Hook
+    <label class="ci-chk">
+      <input type="checkbox" data-kind="hook" data-idx="${idx}" ${hook?'checked':''}> Hook
     </label>
-    <button type="button" class="btn small ghost" data-remove="${idx}" style="width:auto">✕</button>
+    <button type="button" class="btn small ghost" data-remove="${idx}">✕</button>
+  `;
+  $('#customList').appendChild(row);
+}
+function addHook(angle=180){
+  const idx = customItems.push({type:'hook',angle})-1;
+  const row = document.createElement('div');
+  row.className='custom-item';
+  row.innerHTML = `
+    <span class="pill">Hook</span>
+    <span class="ci-unit">Angle</span>
+    <select data-kind="hook-angle" data-idx="${idx}">
+      <option value="90" ${angle==90?'selected':''}>90°</option>
+      <option value="135" ${angle==135?'selected':''}>135°</option>
+      <option value="180" ${angle==180?'selected':''}>180°</option>
+    </select>
+    <button type="button" class="btn small ghost" data-remove="${idx}">✕</button>
   `;
   $('#customList').appendChild(row);
 }
 $('#addLeg').addEventListener('click',()=>{ addLeg(); updateCustomPreview(); });
 $('#addBend').addEventListener('click',()=>{ addBend(); updateCustomPreview(); });
+$('#addHook').addEventListener('click',()=>{ addHook(); updateCustomPreview(); });
 $('#customList').addEventListener('change', e=>{
   const el = e.target, idx = Number(el.dataset.idx);
   if(el.dataset.kind==='leg')        customItems[idx].len   = el.value;
   if(el.dataset.kind==='bend-angle') customItems[idx].angle = Number(el.value);
+  if(el.dataset.kind==='hook-angle') customItems[idx].angle = Number(el.value);
   if(el.dataset.kind==='hook')       customItems[idx].hook  = el.checked;
   updateCustomPreview();
 });
@@ -689,7 +711,11 @@ function loadRow(i) {
   if (r.shape === 'custom') {
     resetCustom()
     $('#customName').value = inp.name||''
-    for (const it of (inp.items||[])) { if (it.type === 'leg') addLeg(it.len); else if (it.type === 'bend') addBend(it.angle, it.hook) }
+    for (const it of (inp.items||[])) {
+      if (it.type === 'leg') addLeg(it.len);
+      else if (it.type === 'bend') addBend(it.angle, it.hook);
+      else if (it.type === 'hook') addHook(it.angle);
+    }
     updateCustomPreview()
   }
   updateRecordNav()
@@ -700,7 +726,14 @@ function loadRow(i) {
 function navRecord(dir) {
   if (!rows.length) return
   if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
-  let base = editIndex >= 0 ? editIndex : lastEditedIndex
+  lastEditedIndex = -1
+  const submitBtn = document.querySelector('.submit-btn')
+  if (submitBtn) {
+    submitBtn.textContent = '➕ Add to Schedule'
+    submitBtn.classList.remove('active')
+    submitBtn.disabled = false
+  }
+  let base = editIndex >= 0 ? editIndex : rows.length - 1
   let target = base + dir
   if (target < 0) target = 0
   if (target >= rows.length) target = rows.length - 1
@@ -1447,9 +1480,9 @@ function initPagination() {
     <span id="pageInfo" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px">Page 1 of 1</span>
     <button class="btn small ghost" id="nextPage" title="Next page">▶</button>
     <select id="pageSizeSelect" style="width:auto;padding:3px 5px;font-size:11px;margin-left:2px">
+      <option value="10">10</option>
       <option value="25" selected>25</option>
       <option value="50">50</option>
-      <option value="100">100</option>
       <option value="0">All</option>
     </select>
   `

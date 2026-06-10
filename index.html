@@ -68,17 +68,23 @@
     <section class="card collapsed" id="settingsPanel" aria-live="polite">
       <h2 class="card-title">Settings</h2>
       <div class="frow">
-        <div class="fgroup fg-3"><label for="unitMethod">Unit weight method</label>
+        <div class="fgroup fg-4"><label for="unitMethod">Unit weight method</label>
           <select id="unitMethod"><option value="d2over162" selected>d²/162 (kg/m)</option><option value="density">π/4·(d/1000)²·ρ (kg/m)</option></select>
           <div class="subtle">ρ defaults to 7850 kg/m³</div></div>
-        <div class="fgroup fg-1"><label for="density">Steel density ρ (kg/m³)</label>
+        <div class="fgroup fg-2"><label for="density">Steel density ρ (kg/m³)</label>
           <input id="density" type="number" step="1" value="7850" /></div>
-        <div class="fgroup fg-1"><label for="hook90">Hook 90° (×d)</label><input id="hook90"   type="number" step="0.1" value="9"  /></div>
-        <div class="fgroup fg-1"><label for="hook135">Hook 135° (×d)</label><input id="hook135" type="number" step="0.1" value="11" /></div>
-        <div class="fgroup fg-1"><label for="hook180">Hook 180° (×d)</label><input id="hook180" type="number" step="0.1" value="16" /></div>
-        <div class="fgroup fg-1"><label for="ded45">Bend ded. 45° (×d)</label><input id="ded45"   type="number" step="0.1" value="1" /></div>
-        <div class="fgroup fg-1"><label for="ded90">Bend ded. 90° (×d)</label><input id="ded90"   type="number" step="0.1" value="2" /></div>
-        <div class="fgroup fg-1"><label for="ded135">Bend ded. 135° (×d)</label><input id="ded135" type="number" step="0.1" value="3" /></div>
+      </div>
+      <div class="frow">
+        <span class="flabel" style="flex:0 0 100%">Hook length multipliers (× bar dia)</span>
+        <div class="fgroup fg-1"><label for="hook90">90°</label><input id="hook90"   type="number" step="0.1" value="10" /></div>
+        <div class="fgroup fg-1"><label for="hook135">135°</label><input id="hook135" type="number" step="0.1" value="12" /></div>
+        <div class="fgroup fg-1"><label for="hook180">180°</label><input id="hook180" type="number" step="0.1" value="14" /></div>
+      </div>
+      <div class="frow">
+        <span class="flabel" style="flex:0 0 100%">Bend deduction multipliers (× bar dia)</span>
+        <div class="fgroup fg-1"><label for="ded45">45°</label><input id="ded45"   type="number" step="0.1" value="1" /></div>
+        <div class="fgroup fg-1"><label for="ded90">90°</label><input id="ded90"   type="number" step="0.1" value="2" /></div>
+        <div class="fgroup fg-1"><label for="ded135">135°</label><input id="ded135" type="number" step="0.1" value="3" /></div>
       </div>
       <div class="toolbar">
         <button class="btn small" id="saveSettings">Save</button>
@@ -205,14 +211,12 @@
                 <option value="diamond">Diamond</option>
                 <option value="2-diamond">2-Legged Rect + Diamond</option>
               </select></div>
-            <div id="stirrupInputs" style="display:contents">
-              <div class="fgroup fg-1"><label for="S_A">A (mm)</label><input id="S_A" type="number" min="1" tabindex="11" /></div>
-              <div class="fgroup fg-1"><label for="S_B">B (mm)</label><input id="S_B" type="number" min="1" tabindex="12" /></div>
-            </div>
-            <div class="fgroup fg-1 fg-stirrup-rect"><label for="S_cover">Cover (mm)</label><input id="S_cover" type="number" value="25" min="0" tabindex="13" /></div>
+            <div class="fgroup fg-1 fg-stirrup-rect"><label for="S_A">A (mm)</label><input id="S_A" type="number" min="1" tabindex="11" /></div>
+            <div class="fgroup fg-1 fg-stirrup-rect"><label for="S_B">B (mm)</label><input id="S_B" type="number" min="1" tabindex="12" /></div>
             <div class="fgroup fg-1 fg-stirrup-circ hidden"><label for="S_diaCirc">⌀ (mm)</label><input id="S_diaCirc" type="number" min="1" tabindex="13" /></div>
+            <div class="fgroup fg-1"><label for="S_cover">Cover (mm)</label><input id="S_cover" type="number" value="25" min="0" tabindex="14" /></div>
             <div class="fgroup fg-1"><label for="S_angle">Hook Angle</label>
-              <select id="S_angle" tabindex="14"><option value="90">90°</option><option value="135" selected>135°</option><option value="180">180°</option></select></div>
+              <select id="S_angle" tabindex="15"><option value="90">90°</option><option value="135" selected>135°</option><option value="180">180°</option></select></div>
           </div>
         </div>
 
@@ -279,13 +283,14 @@
           <div class="frow">
             <div class="fgroup fg-7">
               <span class="flabel">Custom Legs (mm) &amp; Bends (°)</span>
-              <div class="subtle">Add legs and bends sequentially. Deductions and hooks are auto-applied.</div>
+              <div class="subtle">Add legs, bends, and hooks sequentially. Deductions and hooks are auto-applied.</div>
             </div>
           </div>
           <div id="customList" class="custom-list"></div>
           <div class="toolbar">
             <button type="button" class="btn small" id="addLeg" tabindex="10">➕ Leg</button>
             <button type="button" class="btn small" id="addBend" tabindex="11">➕ Bend</button>
+            <button type="button" class="btn small" id="addHook" tabindex="12">➕ Hook</button>
             <div class="space"></div>
             <span class="subtle">Preview CL: <span id="customPreview" class="badge mono">0</span> mm</span>
           </div>
