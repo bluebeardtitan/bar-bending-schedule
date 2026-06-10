@@ -498,11 +498,11 @@ $('#barForm').addEventListener('submit', e=>{
   }else if(shape==='hook-semi'){
     const a={len:Number($('#HS_len').value),ends:$('#HS_ends').value,dia};
     cl=CL['hook-semi'](a); clCalc=CLcalc['hook-semi'](a);
-    shapeLabel=`Straight 180° hook (${a.ends==='both'?'both ends':a.ends+' end'})`;
+    shapeLabel=`Straight 180° hook (${a.ends==='both'?'both ends':'one end'})`;
   }else if(shape==='hook-L'){
     const a={len:Number($('#HL_len').value),ends:$('#HL_ends').value,dia};
     cl=CL['hook-L'](a); clCalc=CLcalc['hook-L'](a);
-    shapeLabel=`Straight 90° hook (${a.ends==='both'?'both ends':a.ends+' end'})`;
+    shapeLabel=`Straight 90° hook (${a.ends==='both'?'both ends':'one end'})`;
   }else if(shape==='custom'){
     const a={items:customItems.filter(x=>x.type!=='deleted'),dia};
     cl=CL.custom(a); clCalc=CLcalc.custom(a); shapeLabel=$('#customName').value.trim()||'Other shape';
