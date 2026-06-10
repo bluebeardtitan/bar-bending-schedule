@@ -726,6 +726,7 @@ function loadRow(i) {
 function navRecord(dir) {
   if (!rows.length) return
   if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
+  const savedLastEdited = lastEditedIndex
   lastEditedIndex = -1
   const submitBtn = document.querySelector('.submit-btn')
   if (submitBtn) {
@@ -733,7 +734,7 @@ function navRecord(dir) {
     submitBtn.classList.remove('active')
     submitBtn.disabled = false
   }
-  let base = editIndex >= 0 ? editIndex : rows.length - 1
+  let base = editIndex >= 0 ? editIndex : (savedLastEdited >= 0 ? savedLastEdited : rows.length - 1)
   let target = base + dir
   if (target < 0) target = 0
   if (target >= rows.length) target = rows.length - 1
