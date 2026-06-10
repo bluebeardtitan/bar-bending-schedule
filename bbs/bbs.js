@@ -226,30 +226,36 @@ let editIndex = -1;
 let currentPage = (parseInt(localStorage.getItem('bbs_page')) || 1)
 let navPersistTimer = null
 let lastEditedIndex = -1
+let searchTerm = ''
 const DEFAULT_PAGE_SIZE = 25
 let pageSize = DEFAULT_PAGE_SIZE
 
 function persist(){ localStorage.setItem('bbs_rows', JSON.stringify(rows)); }
-function recalcSums(){
+function recalcSums(filtered){
+  const items = filtered || rows;
   let sumLen=0, sumWt=0;
-  rows.forEach(r=>{ sumLen+=r.totalLenM; sumWt+=r.totalWtKg; });
+  items.forEach(r=>{ sumLen+=r.totalLenM; sumWt+=r.totalWtKg; });
   $('#sumLen').textContent = fmt3(sumLen);
   $('#sumWt').textContent  = fmt3(sumWt);
-  $('#countBadge').textContent = `${rows.length} item${rows.length!==1?'s':''}`;
+  const total = rows.length;
+  const shown = items.length;
+  $('#countBadge').textContent = shown < total ? `${shown} / ${total} item${total!==1?'s':''}` : `${total} item${total!==1?'s':''}`;
 }
-function renderPagination() {
+function renderPagination(visibleCount) {
   const el = $('#paginationControls')
   if (!el) return
-  if (!pageSize || pageSize <= 0 || rows.length <= pageSize) {
+  const count = visibleCount != null ? visibleCount : rows.length
+  if (!pageSize || pageSize <= 0 || count <= pageSize) {
     el.style.display = 'none'
     return
   }
   el.style.display = 'inline-flex'
   el.style.alignItems = 'center'
   el.style.gap = '4px'
-  $('#pageInfo').textContent = `Page ${currentPage} of ${getPageCount()}`
+  const maxPage = Math.max(1, Math.ceil(count / pageSize))
+  $('#pageInfo').textContent = `Page ${currentPage} of ${maxPage}`
   $('#prevPage').disabled = currentPage <= 1
-  $('#nextPage').disabled = currentPage >= getPageCount()
+  $('#nextPage').disabled = currentPage >= maxPage
 }
 /* Thumbnail/preview source for a row's shape — vector (SVG) preferred, raster fallback. */
 function shapeSrc(r){
@@ -259,11 +265,34 @@ function shapeSrc(r){
 
 function render(){
   const tbody = $('#tbody'); tbody.innerHTML='';
-  clampPage()
-  const pageRows = getPageRows()
-  const offset = pageSize > 0 ? (currentPage - 1) * pageSize : 0
+
+  let visibleRows, visibleIndices = [];
+  if (searchTerm) {
+    const t = searchTerm.toLowerCase();
+    rows.forEach((r, i) => {
+      if ((r.member && r.member.toLowerCase().includes(t)) ||
+          (r.mark && r.mark.toLowerCase().includes(t)) ||
+          (r.shapeLabel && r.shapeLabel.toLowerCase().includes(t)) ||
+          (r.remarks && r.remarks.toLowerCase().includes(t)) ||
+          String(r.dia).includes(t) ||
+          (r.grade && r.grade.toLowerCase().includes(t))) {
+        visibleIndices.push(i);
+      }
+    });
+    visibleRows = visibleIndices.map(i => rows[i]);
+  } else {
+    visibleRows = rows;
+    visibleIndices = rows.map((_, i) => i);
+  }
+
+  const visibleCount = visibleRows.length;
+  const maxPage = pageSize > 0 ? Math.max(1, Math.ceil(visibleCount / pageSize)) : 1;
+  if (currentPage > maxPage) currentPage = maxPage;
+  const offset = pageSize > 0 ? (currentPage - 1) * pageSize : 0;
+  const pageRows = pageSize > 0 ? visibleRows.slice(offset, offset + pageSize) : visibleRows;
+
   pageRows.forEach((r,i)=>{
-    const idx = offset + i
+    const idx = visibleIndices[offset + i];
     const src = shapeSrc(r);
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -297,8 +326,8 @@ function render(){
     tr.setAttribute('draggable','true');
     tbody.appendChild(tr);
   });
-  recalcSums();
-  renderPagination()
+  recalcSums(visibleRows);
+  renderPagination(visibleCount)
   updateRecordNav()
   localStorage.setItem('bbs_page', String(currentPage))
 }
@@ -1502,6 +1531,14 @@ function initPagination() {
     currentPage = 1
     render()
   })
+  const searchInput = $('#searchInput')
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      searchTerm = e.target.value.trim()
+      currentPage = 1
+      render()
+    })
+  }
 }
 
 /* =========================
