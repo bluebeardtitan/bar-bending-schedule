@@ -1,10 +1,4 @@
 /* =========================
-   Utilities
-   ========================= */
-const $ = sel => document.querySelector(sel);
-const $$ = sel => Array.from(document.querySelectorAll(sel));
-
-/* =========================
    Project Info
    ========================= */
 const INFO_DEFAULTS = { header:'', project:'', agency:'', ref:'' };
@@ -31,9 +25,6 @@ function readInfoFromForm(){
   projectInfo.ref     = $('#infoRef').value.trim();
 }
 /* Fill the print-header meta cells */
-function escapeHTML(str){
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
 function updatePrintMeta(){
   // convert newline characters to <br> and escape HTML
   const render = txt => {
@@ -78,7 +69,7 @@ $('#clearInfo').addEventListener('click', () => {
 const DEFAULTS = {
   unitMethod: 'd2over162',
   density: 7850,
-  hooks: { '90': 9, '135': 11, '180': 16 },
+  hooks: { '90': 10, '135': 12, '180': 14 },
   ded:   { '45': 1, '90': 2,  '135': 3  }
 };
 let settings = loadSettings();
@@ -114,10 +105,6 @@ function unitWeightKgPerM(dia){
   return Math.PI/4 * d_m * d_m * settings.density;
 }
 
-/* Formatting */
-const fmt3 = n => (Math.round(n*1000)/1000).toFixed(3);
-const fmt0 = n => Math.round(n).toString();
-
 /* =========================
    Shape Calculations
    ========================= */
@@ -140,20 +127,22 @@ const CL = {
   straight: ({len}) => len,
   L: ({A,B,angle,dia}) => A + B - bendDeduction(angle,dia),
   U: ({A,B,C,dia}) => A + B + C - 2*bendDeduction(90,dia),
-  stirrup: ({A,B,cover,angle,dia,type,diaCirc,side}) => {
-    const ded  = (settings.ded[angle]  || 0) * dia;
-    const hook = (settings.hooks[angle]|| 0) * dia;
-    if(type==='2'){ const a=A-2*cover, b=B-2*cover; return 2*a+2*b-4*ded+2*hook; }
-    if(type==='4'){ const a=A-2*cover, b=B-2*cover; return 2*a+4*b-6*ded+4*hook; }
-    if(type==='6'){ const a=A-2*cover, b=B-2*cover; return 2*a+6*b-8*ded+6*hook; }
-    if(type==='circle'){ const d=diaCirc-2*cover; return Math.PI*d-ded+2*hook; }
-    if(type==='diamond'){ const s=side-2*cover; return 4*s-4*ded+2*hook; }
+  stirrup: ({A,B,cover,angle,dia,type,diaCirc}) => {
+    const hook = (settings.hooks[angle]||0) * dia;
+    const a = A - 2*cover - dia;
+    const b = B - 2*cover - dia;
+    if(type==='2') return 2*(a+b) + 2*hook;
+    if(type==='4') return 2*(a+b) + 2*b + 2*a/3 + 4*hook;
+    if(type==='4-master') return 4*(a+b) + 2*b + 2*a/3 + 6*hook;
+    if(type==='circle'){ const d=diaCirc-2*cover-dia; return Math.PI*d + 2*hook; }
+    if(type==='diamond') return 4*(0.5*Math.sqrt(a*a+b*b)) + 2*hook;
+    if(type==='2-diamond') return 2*(a+b) + 4*(0.5*Math.sqrt(a*a+b*b)) + 4*hook;
     return 0;
   },
-  circle:  ({dia,diaBar}) => Math.PI*(dia+diaBar),
+  circle:  ({dia,diaBar}) => Math.PI*(dia+diaBar) + 24*diaBar,
   spiral:  ({dia,pitch,turns,diaBar}) => {
     const D = dia+diaBar;
-    return Math.sqrt((Math.PI*D)**2 + pitch**2) * turns;
+    return Math.sqrt((Math.PI*D)**2 + pitch**2) * turns + 8*diaBar;
   },
   crank:   ({span,depth,angle,dia}) => {
     const rad = angle*Math.PI/180;
@@ -185,24 +174,28 @@ const CLcalc = {
     return `${fmtN(A)} + ${fmtN(B)} ${MINUS} ${fmtN(d)} = ${fmt0(A+B-d)}`; },
   U: ({A,B,C,dia}) => { const d=bendDeduction(90,dia);
     return `${fmtN(A)} + ${fmtN(B)} + ${fmtN(C)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(A+B+C-2*d)}`; },
-  stirrup: ({A,B,cover,angle,dia,type,diaCirc,side}) => {
-    const ded=(settings.ded[angle]||0)*dia, hook=(settings.hooks[angle]||0)*dia;
-    if(type==='2'){ const a=A-2*cover, b=B-2*cover;
-      return `2${TIMES}${fmtN(a)} + 2${TIMES}${fmtN(b)} ${MINUS} 4${TIMES}${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(2*a+2*b-4*ded+2*hook)}`; }
-    if(type==='4'){ const a=A-2*cover, b=B-2*cover;
-      return `2${TIMES}${fmtN(a)} + 4${TIMES}${fmtN(b)} ${MINUS} 6${TIMES}${fmtN(ded)} + 4${TIMES}${fmtN(hook)} = ${fmt0(2*a+4*b-6*ded+4*hook)}`; }
-    if(type==='6'){ const a=A-2*cover, b=B-2*cover;
-      return `2${TIMES}${fmtN(a)} + 6${TIMES}${fmtN(b)} ${MINUS} 8${TIMES}${fmtN(ded)} + 6${TIMES}${fmtN(hook)} = ${fmt0(2*a+6*b-8*ded+6*hook)}`; }
-    if(type==='circle'){ const d=diaCirc-2*cover;
-      return `π${TIMES}${fmtN(d)} ${MINUS} ${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(Math.PI*d-ded+2*hook)}`; }
-    if(type==='diamond'){ const s=side-2*cover;
-      return `4${TIMES}${fmtN(s)} ${MINUS} 4${TIMES}${fmtN(ded)} + 2${TIMES}${fmtN(hook)} = ${fmt0(4*s-4*ded+2*hook)}`; }
+  stirrup: ({A,B,cover,angle,dia,type,diaCirc}) => {
+    const hook = (settings.hooks[angle]||0) * dia;
+    const a = A - 2*cover - dia;
+    const b = B - 2*cover - dia;
+    if(type==='2')
+      return `2(${fmtN(a)} + ${fmtN(b)}) + 2${TIMES}${fmtN(hook)} = ${fmt0(2*(a+b)+2*hook)}`;
+    if(type==='4')
+      return `2(${fmtN(a)}+${fmtN(b)}) + 2${TIMES}${fmtN(b)} + 2${TIMES}${fmtN(a)}/3 + 4${TIMES}${fmtN(hook)} = ${fmt0(2*(a+b)+2*b+2*a/3+4*hook)}`;
+    if(type==='4-master')
+      return `4(${fmtN(a)}+${fmtN(b)}) + 2${TIMES}${fmtN(b)} + 2${TIMES}${fmtN(a)}/3 + 6${TIMES}${fmtN(hook)} = ${fmt0(4*(a+b)+2*b+2*a/3+6*hook)}`;
+    if(type==='circle'){ const d=diaCirc-2*cover-dia;
+      return `π${TIMES}${fmtN(d)} + 2${TIMES}${fmtN(hook)} = ${fmt0(Math.PI*d+2*hook)}`; }
+    if(type==='diamond')
+      return `4${TIMES}0.5${TIMES}√(${fmtN(a)}²+${fmtN(b)}²) + 2${TIMES}${fmtN(hook)} = ${fmt0(4*0.5*Math.sqrt(a*a+b*b)+2*hook)}`;
+    if(type==='2-diamond')
+      return `2(${fmtN(a)}+${fmtN(b)}) + 4${TIMES}0.5${TIMES}√(${fmtN(a)}²+${fmtN(b)}²) + 4${TIMES}${fmtN(hook)} = ${fmt0(2*(a+b)+4*0.5*Math.sqrt(a*a+b*b)+4*hook)}`;
     return '';
   },
   circle:  ({dia,diaBar}) => { const d=dia+diaBar;
-    return `π(${fmtN(dia)} + ${fmtN(diaBar)}) = ${fmt0(Math.PI*d)}`; },
+    return `π(${fmtN(dia)} + ${fmtN(diaBar)}) + 24${TIMES}${fmtN(diaBar)} = ${fmt0(Math.PI*d+24*diaBar)}`; },
   spiral:  ({dia,pitch,turns,diaBar}) => { const D=dia+diaBar;
-    return `√((π${TIMES}${fmtN(D)})² + ${fmtN(pitch)}²) ${TIMES} ${fmtN(turns)} = ${fmt0(Math.sqrt((Math.PI*D)**2+pitch**2)*turns)}`; },
+    return `√((π${TIMES}${fmtN(D)})² + ${fmtN(pitch)}²) ${TIMES} ${fmtN(turns)} + 8${TIMES}${fmtN(diaBar)} = ${fmt0(Math.sqrt((Math.PI*D)**2+pitch**2)*turns+8*diaBar)}`; },
   crank:   ({span,depth,angle,dia}) => {
     const rad=angle*Math.PI/180, extra=depth*(1/Math.sin(rad)-1/Math.tan(rad)), d=bendDeduction(angle,dia);
     return `${fmtN(span)} + 2${TIMES}${fmtN(extra)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(span+extra*2-2*d)}`; },
@@ -241,21 +234,6 @@ function recalcSums(){
   $('#sumLen').textContent = fmt3(sumLen);
   $('#sumWt').textContent  = fmt3(sumWt);
   $('#countBadge').textContent = `${rows.length} item${rows.length!==1?'s':''}`;
-}
-function getPageCount() {
-  if (!pageSize || pageSize <= 0) return 1
-  return Math.max(1, Math.ceil(rows.length / pageSize))
-}
-function getPageRows() {
-  if (!pageSize || pageSize <= 0) return rows
-  const start = (currentPage - 1) * pageSize
-  return rows.slice(start, start + pageSize)
-}
-function clampPage() {
-  if (!pageSize || pageSize <= 0) { currentPage = 1; return }
-  const max = getPageCount()
-  if (currentPage > max) currentPage = max
-  if (currentPage < 1) currentPage = 1
 }
 function renderPagination() {
   const el = $('#paginationControls')
@@ -357,6 +335,11 @@ function showQty(mode){
 }
 $('#shape').addEventListener('change', e=>showShape(e.target.value));
 $('#qtyMode').addEventListener('change', e=>showQty(e.target.value));
+$('#S_type').addEventListener('change', () => {
+  const isCirc = $('#S_type').value === 'circle';
+  document.querySelector('.fg-stirrup-rect').classList.toggle('hidden', isCirc);
+  document.querySelector('.fg-stirrup-circ').classList.toggle('hidden', !isCirc);
+});
 
 /* Custom builder */
 let customItems = [];
@@ -444,10 +427,10 @@ $('#barForm').addEventListener('submit', e=>{
   }else if(shape==='stirrup'){
     const type=$('#S_type').value, cover=Number($('#S_cover').value), angle=Number($('#S_angle').value);
     let a;
-    if(type==='2'||type==='4'||type==='6'){ a={A:Number($('#S_A').value),B:Number($('#S_B').value),cover,angle,dia,type}; }
-    else if(type==='circle'){ a={diaCirc:Number($('#S_diaCirc').value),cover,angle,dia,type}; }
-    else if(type==='diamond'){ a={side:Number($('#S_side').value),cover,angle,dia,type}; }
-    cl=CL.stirrup(a); clCalc=CLcalc.stirrup(a); shapeLabel=`Stirrup ${type}-legged`;
+    if(type==='circle'){ a={A:0,B:0,diaCirc:Number($('#S_diaCirc').value),cover,angle,dia,type}; }
+    else{ a={A:Number($('#S_A').value),B:Number($('#S_B').value),cover,angle,dia,type}; }
+    const labels={2:'2-Legged',4:'4-Legged','4-master':'4-Legged Master Ring',circle:'Circular',diamond:'Diamond','2-diamond':'2-Legged Rect + Diamond'};
+    cl=CL.stirrup(a); clCalc=CLcalc.stirrup(a); shapeLabel=`Stirrup ${labels[type]||type}`;
   }else if(shape==='circle'){
     const diaVal=Number($('#C_dia').value), a={dia:diaVal,diaBar:dia};
     cl=CL.circle(a); clCalc=CLcalc.circle(a); shapeLabel=`Circle ⌀${diaVal}`;
@@ -503,9 +486,8 @@ $('#barForm').addEventListener('submit', e=>{
   else if(shape==='stirrup'){
     const type=$('#S_type').value, cover=Number($('#S_cover').value), angle=Number($('#S_angle').value);
     row.inputs={type,cover,angle};
-    if(type==='2'||type==='4'||type==='6'){ row.inputs.A=Number($('#S_A').value); row.inputs.B=Number($('#S_B').value); }
-    else if(type==='circle'){ row.inputs.diaCirc=Number($('#S_diaCirc').value); }
-    else if(type==='diamond'){ row.inputs.side=Number($('#S_side').value); }
+    if(type==='circle'){ row.inputs.diaCirc=Number($('#S_diaCirc').value); }
+    else{ row.inputs.A=Number($('#S_A').value); row.inputs.B=Number($('#S_B').value); }
   }
   else if(shape==='circle'){ row.inputs={diaVal:Number($('#C_dia').value)}; }
   else if(shape==='spiral'){ row.inputs={diaVal:Number($('#SP_dia').value),pitch:Number($('#SP_pitch').value),turns:Number($('#SP_turns').value)}; }
@@ -567,10 +549,6 @@ function sortRowsByMemberGroup() {
 /* =========================
    Edit & Delete
    ========================= */
-function closeOptionsMenus() {
-  document.querySelectorAll('.options-menu.open').forEach(m => m.classList.remove('open'))
-}
-
 $('#bbsTable').addEventListener('click', e=>{
   const optsBtn = e.target.closest('.options-btn')
   if (optsBtn) {
@@ -697,11 +675,10 @@ function loadRow(i) {
   if (r.shape === 'L') { $('#L_A').value = inp.A||''; $('#L_B').value = inp.B||''; $('#L_angle').value = inp.angle||90 }
   if (r.shape === 'U') { $('#U_A').value = inp.A||''; $('#U_B').value = inp.B||''; $('#U_C').value = inp.C||'' }
   if (r.shape === 'stirrup') {
-    $('#S_type').value = $('#S_type').value; $('#S_cover').value = inp.cover||25; $('#S_angle').value = inp.angle||135
+    $('#S_type').value = inp.type||'2'; $('#S_cover').value = inp.cover||25; $('#S_angle').value = inp.angle||135
     $('#S_type').dispatchEvent(new Event('change'))
-    if (inp.type === '2'||inp.type === '4'||inp.type === '6') { $('#S_A').value = inp.A||''; $('#S_B').value = inp.B||'' }
-    else if (inp.type === 'circle') { $('#S_diaCirc').value = inp.diaCirc||'' }
-    else if (inp.type === 'diamond') { $('#S_side').value = inp.side||'' }
+    if (inp.type === 'circle') { $('#S_diaCirc').value = inp.diaCirc||'' }
+    else { $('#S_A').value = inp.A||''; $('#S_B').value = inp.B||'' }
   }
   if (r.shape === 'circle')  { $('#C_dia').value = inp.diaVal||'' }
   if (r.shape === 'spiral')  { $('#SP_dia').value = inp.diaVal||''; $('#SP_pitch').value = inp.pitch||''; $('#SP_turns').value = inp.turns||'' }
@@ -770,52 +747,54 @@ $('#btnSettings').addEventListener('click',()=>{
 $('#btnHelp').addEventListener('click',()=>document.getElementById('helpDlg').showModal());
 
 /* =========================
-   CSV Export  (includes project info header)
+   CSV Export  (includes project info header) — uses Papa Parse
    ========================= */
-// helper to escape CSV values, quoting if necessary and preserving line breaks
-function csvEscape(val){
-  let s = String(val);
-  // double any existing quotes
-  if(s.indexOf('"') !== -1) s = s.replace(/"/g,'""');
-  // if contains comma, quote, or newline, wrap in quotes
-  if(/[,\n"]/.test(s)){
-    return `"${s}"`;
-  }
-  return s;
-}
-
-function infoLine(label,value){
-  // use plain hyphen when no value to avoid non-ASCII characters in CSV
-  const v = value ? String(value) : '-';
-  return `${csvEscape(label)},${csvEscape(v)}`;
-}
-
 function toCSV(){
   const lines = [];
-  // Project info block
-  if (projectInfo.header) lines.push(csvEscape(projectInfo.header));
+  // Project info block (free text)
+  if (projectInfo.header) lines.push(projectInfo.header);
   lines.push('BAR BENDING SCHEDULE (BBS)');
-  lines.push(infoLine('Name of Work',   projectInfo.project));
-  lines.push(infoLine('Name of Agency', projectInfo.agency));
-  lines.push(infoLine('Reference',      projectInfo.ref));
-  lines.push(''); // blank separator
+  lines.push(`Name of Work,${projectInfo.project || '-'}`);
+  lines.push(`Name of Agency,${projectInfo.agency || '-'}`);
+  lines.push(`Reference,${projectInfo.ref || '-'}`);
+  lines.push('');
 
-  // Table headers
-  lines.push(['#','Member','Mark','Ø','Shape','CL Calculation','CL / Bar (mm)','Qty','Extra/Lap (mm)','Total L (m)','Wt / m (kg)','Total Wt (kg)','Remarks'].join(','));
-  rows.forEach((r,i)=>{
-    lines.push([
-      i+1, `"${r.member}"`, r.mark||'', r.dia, r.shapeLabel, csvEscape(r.clCalc||''), fmt0(r.clPerBarMm),
-      r.qty, fmt0(r.extraLen||0), fmt3(r.totalLenM), fmt3(r.unitWtKgPerM), fmt3(r.totalWtKg), `"${(r.remarks||'').replace(/"/g,"'")}"`
-    ].join(','));
+  // Build tabular data as array of objects for Papa.unparse
+  const totalLen = rows.reduce((a,b)=>a+b.totalLenM,0);
+  const totalWt  = rows.reduce((a,b)=>a+b.totalWtKg,0);
+  const data = rows.map((r,i) => ({
+    '#': i + 1,
+    Member: r.member,
+    Mark: r.mark || '',
+    Ø: r.dia,
+    Shape: r.shapeLabel,
+    'CL Calculation': r.clCalc || '',
+    'CL / Bar (mm)': fmt0(r.clPerBarMm),
+    Qty: r.qty,
+    'Extra/Lap (mm)': fmt0(r.extraLen || 0),
+    'Total L (m)': fmt3(r.totalLenM),
+    'Wt / m (kg)': fmt3(r.unitWtKgPerM),
+    'Total Wt (kg)': fmt3(r.totalWtKg),
+    Remarks: r.remarks || ''
+  }));
+  // Append totals row
+  data.push({
+    '#': 'Totals', Member: '', Mark: '', Ø: '',
+    Shape: '', 'CL Calculation': '', 'CL / Bar (mm)': '',
+    Qty: '', 'Extra/Lap (mm)': '',
+    'Total L (m)': fmt3(totalLen),
+    'Wt / m (kg)': '',
+    'Total Wt (kg)': fmt3(totalWt),
+    Remarks: ''
   });
-  lines.push(['Totals','','','','','','','','',
-    fmt3(rows.reduce((a,b)=>a+b.totalLenM,0)),'',
-    fmt3(rows.reduce((a,b)=>a+b.totalWtKg,0)),''
-  ].join(','));
-  return lines.join('\n');
+
+  lines.push(Papa.unparse(data, { newline: '\r\n' }));
+  return lines.join('\r\n');
 }
 $('#exportCSV').addEventListener('click',()=>{
-  const blob = new Blob([toCSV()],{type:'text/csv;charset=utf-8;'});
+  // BOM helps Excel recognise UTF-8
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + toCSV()],{type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `bbs_${(projectInfo.project||'schedule').replace(/[^a-z0-9]/gi,'_').toLowerCase()}.csv`;
@@ -823,23 +802,161 @@ $('#exportCSV').addEventListener('click',()=>{
 });
 
 /* =========================
+   CSV Import  (using Papa Parse)
+   ========================= */
+$('#importCSV').addEventListener('click', () => {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,text/csv';
+  inp.onchange = () => {
+    const file = inp.files[0]; if (!file) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        const result = Papa.parse(fr.result, { header: true, skipEmptyLines: true, dynamicTyping: true });
+        if (result.errors.length) console.warn('CSV parse warnings:', result.errors);
+        if (!result.data || !result.data.length) { alert('No data found in CSV.'); return; }
+
+        const cols = result.meta.fields || [];
+        const colIdx = {};
+        cols.forEach((c, i) => colIdx[c.trim().toLowerCase()] = i);
+
+        // Map CSV column headers (from export format) to row properties
+        const mapKey = {
+          'member': 'member', 'mark': 'mark', 'ø': 'dia', 'φ': 'dia',
+          'shape': 'shapeLabel', 'cl / bar (mm)': 'clPerBarMm',
+          'cl calculation': 'clCalc', 'qty': 'qty',
+          'extra/lap (mm)': 'extraLen', 'total l (m)': 'totalLenM',
+          'wt / m (kg)': 'unitWtKgPerM', 'total wt (kg)': 'totalWtKg',
+          'remarks': 'remarks', 'cl/bar (mm)': 'clPerBarMm',
+          'extra (mm)': 'extraLen', 'wt/m (kg)': 'unitWtKgPerM'
+        };
+        const csvCols = cols.map(c => c.trim().toLowerCase().replace(/[−–—]/g, '-'));
+        // Infer project info from text lines before the table header
+
+        for (const rawLine of fr.result.split('\n')) {
+          const line = rawLine.trim();
+          if (!line) continue;
+          if (/^name of work/i.test(line)) {
+            const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
+            if (val && val !== '-') projectInfo.project = val;
+          } else if (/^name of agency/i.test(line)) {
+            const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
+            if (val && val !== '-') projectInfo.agency = val;
+          } else if (/^reference/i.test(line)) {
+            const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
+            if (val && val !== '-') projectInfo.ref = val;
+          }
+        }
+        applyInfoToForm();
+        saveInfoToStorage();
+        updatePrintMeta();
+
+        const imported = [];
+        for (const row of result.data) {
+          // Skip totals row
+          const first = Object.values(row)[0];
+          if (first != null && String(first).trim().toLowerCase() === 'totals') continue;
+
+          const r = {
+            member: '',
+            mark: '',
+            dia: 8,
+            shape: 'straight',
+            shapeLabel: 'Straight',
+            clPerBarMm: 0,
+            clCalc: '',
+            qty: 1,
+            extraLen: 0,
+            totalLenM: 0,
+            unitWtKgPerM: 0,
+            totalWtKg: 0,
+            remarks: '',
+            grade: 'Fe 500',
+            createdAt: Date.now() + imported.length,
+            shapeVec: null,
+            shapeHist: null,
+            shapeImg: null,
+            inputs: {}
+          };
+
+          for (const [k, v] of Object.entries(row)) {
+            const key = k.trim().toLowerCase().replace(/[−–—]/g, '-');
+            const target = mapKey[key];
+            if (!target) continue;
+            if (target === 'dia') {
+              r.dia = Number(v) || 8;
+              r.shape = 'straight';
+              r.inputs = { len: r.clPerBarMm || 0 };
+            } else if (target === 'member') {
+              r.member = String(v || '');
+            } else if (target === 'mark') {
+              r.mark = String(v || '');
+            } else if (target === 'shapeLabel' && v) {
+              r.shapeLabel = String(v);
+              // Try to guess the shape key from the label
+              const sl = String(v).toLowerCase();
+              if (sl.includes('stirrup') || sl.includes('link')) r.shape = 'stirrup';
+              else if (sl.includes('l (')) r.shape = 'L';
+              else if (sl === 'u') r.shape = 'U';
+              else if (sl.includes('circle')) r.shape = 'circle';
+              else if (sl.includes('spiral')) r.shape = 'spiral';
+              else if (sl.includes('crank')) r.shape = 'crank';
+              else if (sl.includes('chair')) r.shape = 'chair';
+              else if (sl.includes('180')) r.shape = 'hook-semi';
+              else if (sl.includes('90')) r.shape = 'hook-L';
+              else if (sl.includes('other') || sl.includes('custom')) r.shape = 'custom';
+              else r.shape = 'straight';
+            } else if (target === 'clPerBarMm') {
+              r.clPerBarMm = Number(v) || 0;
+            } else if (target === 'clCalc') {
+              r.clCalc = String(v || '');
+            } else if (target === 'qty') {
+              r.qty = Number(v) || 0;
+            } else if (target === 'extraLen') {
+              r.extraLen = Number(v) || 0;
+            } else if (target === 'totalLenM') {
+              r.totalLenM = Number(v) || 0;
+            } else if (target === 'unitWtKgPerM') {
+              r.unitWtKgPerM = Number(v) || 0;
+            } else if (target === 'totalWtKg') {
+              r.totalWtKg = Number(v) || 0;
+            } else if (target === 'remarks') {
+              r.remarks = String(v || '');
+            }
+          }
+
+          // If totalLenM was not parsed but we have clPerBarMm and qty, compute it
+          if (!r.totalLenM && r.clPerBarMm && r.qty) {
+            r.totalLenM = (r.clPerBarMm * r.qty + (r.extraLen || 0)) / 1000;
+          }
+          // If totalWtKg was not parsed but we have totalLenM and unitWtKgPerM, compute it
+          if (!r.totalWtKg && r.totalLenM && r.unitWtKgPerM) {
+            r.totalWtKg = r.totalLenM * r.unitWtKgPerM;
+          }
+
+          if (r.member || r.clPerBarMm > 0) {
+            imported.push(r);
+          }
+        }
+
+        if (!imported.length) { alert('No valid bar rows found in CSV.'); return; }
+        rows.push(...imported);
+        sortRowsByMemberGroup();
+        persist();
+        render();
+        alert(`✅ Imported ${imported.length} bar${imported.length > 1 ? 's' : ''} from CSV.`);
+      } catch (err) {
+        alert('Failed to parse CSV. See console for details.');
+        console.error('CSV import failed:', err);
+      }
+    };
+    fr.readAsText(file);
+  };
+  inp.click();
+});
+
+/* =========================
    Save / Load JSON  (includes project info)
    ========================= */
-/* Pretty-print export but keep each row on a single line */
-function buildExportJSON(data){
-  const indent = (s,pad)=>s.replace(/\n/g,'\n'+pad);
-  const parts = [];
-  for(const [k,v] of Object.entries(data)){
-    if(k==='rows' && Array.isArray(v)){
-      const items = v.map(r=>'    '+JSON.stringify(r));
-      const body = items.length ? '[\n'+items.join(',\n')+'\n  ]' : '[]';
-      parts.push('  '+JSON.stringify(k)+': '+body);
-    } else {
-      parts.push('  '+JSON.stringify(k)+': '+indent(JSON.stringify(v,null,2),'  '));
-    }
-  }
-  return '{\n'+parts.join(',\n')+'\n}';
-}
 $('#saveJSON').addEventListener('click',()=>{
   const now = new Date();
   const ts  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`;
@@ -924,9 +1041,6 @@ $('#printBBS').addEventListener('click', async () => {
       { key:'rem',    title:'Remarks',       align:'left', pct:13   },
     ];
 
-    // sanitize for measurement consistency with how values are drawn later
-    const saniM = s => String(s == null ? '' : s)
-      .replace(/⌀/g, 'Ø').replace(/π/g, 'pi').replace(/√/g, 'sqrt').replace(/−/g, '-');
     // Every string a column must hold (header + all cells + totals), per key
     const cellStrings = key => {
       if (key === 'sketch') return [];
@@ -934,18 +1048,18 @@ $('#printBBS').addEventListener('click', async () => {
       rows.forEach((r,i) => {
         switch (key) {
           case 'idx':    out.push(String(i+1)); break;
-          case 'member': out.push(saniM(r.member||'')); break;
-          case 'mark':   out.push(saniM(r.mark||'')); break;
+          case 'member': out.push(sani(r.member||'')); break;
+          case 'mark':   out.push(sani(r.mark||'')); break;
           case 'dia':    out.push(String(r.dia)); break;
-          case 'shape':  out.push(saniM(r.shapeLabel||'')); break;
-          case 'calc':   out.push(saniM(r.clCalc||'')); break;
+          case 'shape':  out.push(sani(r.shapeLabel||'')); break;
+          case 'calc':   out.push(sani(r.clCalc||'')); break;
           case 'cl':     out.push(fmt0(r.clPerBarMm)); break;
           case 'qty':    out.push(String(r.qty)); break;
           case 'extra':  out.push(fmt0(r.extraLen||0)); break;
           case 'totL':   out.push(fmt3(r.totalLenM)); break;
           case 'wtm':    out.push(fmt3(r.unitWtKgPerM)); break;
           case 'totW':   out.push(fmt3(r.totalWtKg)); break;
-          case 'rem':    out.push(saniM(r.remarks||'')); break;
+          case 'rem':    out.push(sani(r.remarks||'')); break;
         }
       });
       return out;

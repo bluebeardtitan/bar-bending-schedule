@@ -72,6 +72,8 @@ section.card{
 .fg-5{flex:5 1 240px}
 .fg-6{flex:6 1 280px}
 .fg-7{flex:7 1 320px}
+.fg-stirrup-rect,
+.fg-stirrup-circ{flex:1 1 80px}
 
 /* ---- Labels ---- */
 label,.flabel{

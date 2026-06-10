@@ -4,15 +4,10 @@
    volume / shuttering-area maths. Shares the project-info and theme
    with the BBS page; keeps its own rows & settings in localStorage.
    ===================================================================== */
-const $  = sel => document.querySelector(sel);
-const $$ = sel => Array.from(document.querySelectorAll(sel));
-
 /* =========================
    Formatting
    ========================= */
-const fmt3 = n => (Math.round(n*1000)/1000).toFixed(3);
 const fmt4 = n => (Math.round(n*10000)/10000).toFixed(4);
-const fmt0 = n => Math.round(n).toString();
 const fmtL = n => String(+(+n).toFixed(3));            // trim trailing zeros for lengths
 const fmtDim = n => String(Math.round(Number(n)||0)); // whole mm
 const TIMES = '×';
@@ -40,7 +35,6 @@ function readInfoFromForm(){
   projectInfo.agency  = $('#infoAgency').value.trim();
   projectInfo.ref     = $('#infoRef').value.trim();
 }
-function escapeHTML(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function updatePrintMeta(){
   const render = txt => escapeHTML(txt || '—').replace(/\r?\n/g,'<br>');
   $('#pmProject').innerHTML = render(projectInfo.project);
@@ -291,21 +285,6 @@ function recalcSums(){
   $('#sumFw').textContent  = fmt3(totFw);
   $('#countBadge').textContent = `${rows.length} item${rows.length!==1?'s':''}`;
 }
-function getPageCount() {
-  if (!pageSize || pageSize <= 0) return 1
-  return Math.max(1, Math.ceil(rows.length / pageSize))
-}
-function getPageRows() {
-  if (!pageSize || pageSize <= 0) return rows
-  const start = (currentPage - 1) * pageSize
-  return rows.slice(start, start + pageSize)
-}
-function clampPage() {
-  if (!pageSize || pageSize <= 0) { currentPage = 1; return }
-  const max = getPageCount()
-  if (currentPage > max) currentPage = max
-  if (currentPage < 1) currentPage = 1
-}
 function renderPagination() {
   const el = $('#paginationControls')
   if (!el) return
@@ -504,10 +483,6 @@ function sortRowsByMemberGroup() {
 /* =========================
    Edit & Delete
    ========================= */
-function closeOptionsMenus() {
-  document.querySelectorAll('.options-menu.open').forEach(m => m.classList.remove('open'))
-}
-
 $('#bbsTable').addEventListener('click', e => {
   const optsBtn = e.target.closest('.options-btn')
   if (optsBtn) {
@@ -665,46 +640,60 @@ $('#prevRecord').addEventListener('click', () => navRecord(-1))
 $('#nextRecord').addEventListener('click', () => navRecord(+1))
 
 /* =========================
-   CSV Export
+   CSV Export  (uses Papa Parse)
    ========================= */
-function csvEscape(val){
-  let s = String(val);
-  if (s.indexOf('"') !== -1) s = s.replace(/"/g,'""');
-  if (/[,\n"]/.test(s)) return `"${s}"`;
-  return s;
-}
-function infoLine(label, value){ return `${csvEscape(label)},${csvEscape(value?String(value):'-')}`; }
 function toCSV(){
   const lines = [];
-  if (projectInfo.header) lines.push(csvEscape(projectInfo.header));
+  if (projectInfo.header) lines.push(projectInfo.header);
   lines.push('CONCRETE CASTING & FORMWORK SCHEDULE');
-  lines.push(infoLine('Name of Work',   projectInfo.project));
-  lines.push(infoLine('Name of Agency', projectInfo.agency));
-  lines.push(infoLine('Reference',      projectInfo.ref));
+  lines.push(`Name of Work,${projectInfo.project || '-'}`);
+  lines.push(`Name of Agency,${projectInfo.agency || '-'}`);
+  lines.push(`Reference,${projectInfo.ref || '-'}`);
   lines.push('');
-  lines.push(['#','Member','Mark','Element','Section','Dimensions','Length (m)','Nos','Grade',
-    'Volume Calc','Volume (m3)','Formwork Faces','Formwork Calc','Formwork (m2)','Remarks'].join(','));
-  rows.forEach((r,i) => {
-    lines.push([
-      i+1, csvEscape(r.member), csvEscape(r.mark||''), csvEscape(r.element||''),
-      csvEscape(r.sectionLabel), csvEscape(r.dimsLabel), fmtL(r.lengthM), r.nos, csvEscape(r.grade),
-      csvEscape(r.volCalc), fmt3(r.volM3), csvEscape(r.fwModeLabel),
-      csvEscape(r.fwCalc), fmt3(r.fwM2), csvEscape(r.remarks||'')
-    ].join(','));
-  });
-  lines.push(['Totals','','','','','','','','','',
-    fmt3(rows.reduce((a,b)=>a+b.volM3,0)),'','',
-    fmt3(rows.reduce((a,b)=>a+b.fwM2,0)),''].join(','));
-  lines.push('');
-  // Grade summary
+
   const grades = gradeSummary();
-  Object.keys(grades).sort().forEach(g => lines.push(infoLine(`Concrete ${g} (m3)`, fmt3(grades[g]))));
-  lines.push(infoLine(`Concrete +${settings.concWastage}% wastage (m3)`, fmt3(rows.reduce((a,b)=>a+b.volM3,0)*(1+settings.concWastage/100))));
-  lines.push(infoLine(`Formwork +${settings.fwWastage}% wastage (m2)`,  fmt3(rows.reduce((a,b)=>a+b.fwM2,0)*(1+settings.fwWastage/100))));
-  return lines.join('\n');
+  const totVol = rows.reduce((a,b)=>a+b.volM3,0);
+  const totFw  = rows.reduce((a,b)=>a+b.fwM2,0);
+
+  const data = rows.map((r,i) => ({
+    '#': i + 1,
+    Member: r.member,
+    Mark: r.mark || '',
+    Element: r.element || '',
+    Section: r.sectionLabel,
+    Dimensions: r.dimsLabel,
+    'Length (m)': fmtL(r.lengthM),
+    Nos: r.nos,
+    Grade: r.grade,
+    'Volume Calc': r.volCalc || '',
+    'Volume (m3)': fmt3(r.volM3),
+    'Formwork Faces': r.fwModeLabel,
+    'Formwork Calc': r.fwCalc || '',
+    'Formwork (m2)': fmt3(r.fwM2),
+    Remarks: r.remarks || ''
+  }));
+
+  data.push({
+    '#': 'Totals', Member: '', Mark: '', Element: '', Section: '',
+    Dimensions: '', 'Length (m)': '', Nos: '', Grade: '',
+    'Volume Calc': '', 'Volume (m3)': fmt3(totVol),
+    'Formwork Faces': '', 'Formwork Calc': '', 'Formwork (m2)': fmt3(totFw),
+    Remarks: ''
+  });
+
+  lines.push(Papa.unparse(data, { newline: '\r\n' }));
+
+  // Grade summary
+  Object.keys(grades).sort().forEach(g =>
+    lines.push(`Concrete ${g} (m3),${fmt3(grades[g])}`));
+  lines.push(`Concrete +${settings.concWastage}% wastage (m3),${fmt3(totVol * (1 + settings.concWastage / 100))}`);
+  lines.push(`Formwork +${settings.fwWastage}% wastage (m2),${fmt3(totFw * (1 + settings.fwWastage / 100))}`);
+
+  return lines.join('\r\n');
 }
 $('#exportCSV').addEventListener('click', () => {
-  const blob = new Blob([toCSV()], { type:'text/csv;charset=utf-8;' });
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + toCSV()], { type:'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `cfs_${(projectInfo.project||'schedule').replace(/[^a-z0-9]/gi,'_').toLowerCase()}.csv`;
@@ -714,21 +703,6 @@ $('#exportCSV').addEventListener('click', () => {
 /* =========================
    Save / Load JSON
    ========================= */
-/* Pretty-print export but keep each row on a single line */
-function buildExportJSON(data){
-  const indent = (s,pad)=>s.replace(/\n/g,'\n'+pad);
-  const parts = [];
-  for(const [k,v] of Object.entries(data)){
-    if(k==='rows' && Array.isArray(v)){
-      const items = v.map(r=>'    '+JSON.stringify(r));
-      const body = items.length ? '[\n'+items.join(',\n')+'\n  ]' : '[]';
-      parts.push('  '+JSON.stringify(k)+': '+body);
-    } else {
-      parts.push('  '+JSON.stringify(k)+': '+indent(JSON.stringify(v,null,2),'  '));
-    }
-  }
-  return '{\n'+parts.join(',\n')+'\n}';
-}
 $('#saveJSON').addEventListener('click', () => {
   const now = new Date();
   const ts  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`;
