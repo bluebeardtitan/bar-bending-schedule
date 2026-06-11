@@ -218,6 +218,47 @@ const CLcalc = {
   }
 };
 
+/* Rebuild a stored row's cutting length, CL working and weights from its saved
+   raw inputs using the CURRENT settings (bend deductions, hook lengths, unit-
+   weight method/density) — mirrors the form-submit math but reads row.inputs
+   instead of the DOM. Quantity and extra length are kept as stored (they aren't
+   re-derived here). Returns true if the row's numbers were refreshed. */
+function recalcRow(row){
+  if(!row || !row.inputs || !CL[row.shape]) return false;
+  const dia = row.dia, shape = row.shape, ip = row.inputs;
+  let a;
+  if(shape==='straight')       a={len:ip.len};
+  else if(shape==='L')         a={A:ip.A,B:ip.B,angle:ip.angle,dia};
+  else if(shape==='U')         a={A:ip.A,B:ip.B,C:ip.C,dia};
+  else if(shape==='stirrup')   a = ip.type==='circle'
+    ? {A:0,B:0,diaCirc:ip.diaCirc,cover:ip.cover,angle:ip.angle,dia,type:ip.type}
+    : {A:ip.A,B:ip.B,cover:ip.cover,angle:ip.angle,dia,type:ip.type};
+  else if(shape==='circle')    a={dia:ip.diaVal,diaBar:dia};
+  else if(shape==='spiral')    a={dia:ip.diaVal,pitch:ip.pitch,turns:ip.turns,diaBar:dia};
+  else if(shape==='crank')     a={span:ip.span,depth:ip.depth,angle:ip.angle,dia};
+  else if(shape==='chair')     a={height:ip.height,top:ip.top,base:ip.base,dia};
+  else if(shape==='hook-semi') a={len:ip.len,ends:ip.ends,dia};
+  else if(shape==='hook-L')    a={len:ip.len,ends:ip.ends,dia};
+  else if(shape==='custom')    a={items:(ip.items||[]).filter(x=>x.type!=='deleted'),dia};
+  else return false;
+
+  let cl;
+  try { cl = CL[shape](a); } catch(_) { return false; }
+  if(!isFinite(cl) || cl<=0) return false;
+
+  const extraLen = Number(row.extraLen)||0;
+  const qty = Number(row.qty)||0;
+  const wtPerM = unitWeightKgPerM(dia);
+  const totalLenM = (cl*qty + extraLen)/1000;
+
+  row.clPerBarMm   = cl;
+  try { row.clCalc = CLcalc[shape](a); } catch(_) {}
+  row.unitWtKgPerM = wtPerM;
+  row.totalLenM    = totalLenM;
+  row.totalWtKg    = wtPerM * totalLenM;
+  return true;
+}
+
 /* =========================
    State & Table
    ========================= */
@@ -801,6 +842,15 @@ $('#saveSettings').addEventListener('click',()=>{
   saveSettings(); alert('Settings saved.');
 });
 $('#resetSettings').addEventListener('click',()=>{ resetSettings(); alert('Settings reset to defaults.'); });
+/* Wipe ALL saved data for this tool (schedule, project info, settings, theme,
+   pagination, drawn shapes) and reset settings to defaults. Reloads so the app
+   re-initialises exactly like a first visit. */
+$('#clearStorage').addEventListener('click',()=>{
+  if(!confirm('Erase ALL saved data — schedule, project info, settings and theme — and reset everything to defaults?\n\nThis cannot be undone.')) return;
+  try { localStorage.clear(); } catch(_) {}
+  try { sessionStorage.clear(); } catch(_) {}
+  location.reload();
+});
 $('#btnSettings').addEventListener('click',()=>{
   const isOpen = !$('#settingsPanel').classList.contains('collapsed');
   // Close both first, then toggle settings
@@ -1386,6 +1436,22 @@ $('#printBBS').addEventListener('click', async () => {
    ========================= */
 $('#clearAll').addEventListener('click',()=>{
   if(confirm('Clear the entire schedule?')){ rows=[]; editIndex=-1; persist(); render(); }
+});
+
+/* =========================
+   Force recalculation
+   Recompute every row's cutting length & weights from saved inputs against the
+   current settings (useful after changing bend/hook/unit-weight settings).
+   ========================= */
+$('#recalcAll').addEventListener('click',()=>{
+  const fb = window._showFeedback || (()=>{});
+  if(!rows.length){ fb('Nothing to recalculate','err'); return; }
+  let n=0, skipped=0;
+  rows.forEach(r=>{ if(recalcRow(r)) n++; else skipped++; });
+  persist(); render();
+  const tail = skipped ? ` · ${skipped} skipped` : '';
+  if(n) fb(`✔ Recalculated ${n} row${n===1?'':'s'}${tail}`, 'ok');
+  else  fb(`Could not recalculate — ${skipped} row${skipped===1?'':'s'} missing saved inputs`, 'err');
 });
 
 /* =========================
