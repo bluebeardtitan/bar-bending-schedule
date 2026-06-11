@@ -76,7 +76,7 @@ function sectionGeom(section, d){
       dimsLabel: `⌀ ${fmtDim(dia)} mm`,
       sectionLabel: `Circular ⌀${fmtDim(dia)}`,
       fwModes: [
-        { id:'full', label:'Full perimeter (π⌀)', Ps: Math.PI*dia },
+        { id:'full', label:'Full perimeter (3.1415⌀)', Ps: Math.PI*dia },
         { id:'none', label:'No formwork',         Ps: 0 },
       ],
     };

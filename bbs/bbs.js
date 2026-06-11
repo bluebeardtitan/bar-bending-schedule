@@ -124,7 +124,7 @@ const CLcalc = {
     if(type==='4-master')
       return `4(${fmtN(a)}+${fmtN(b)}) + 2${TIMES}${fmtN(b)} + 2${TIMES}${fmtN(a)}/3 + 6${TIMES}${fmtN(hook)} = ${fmt0(4*(a+b)+2*b+2*a/3+6*hook)}`;
     if(type==='circle'){ const d=diaCirc-2*cover-dia;
-      return `π${TIMES}${fmtN(d)} + 2${TIMES}${fmtN(hook)} = ${fmt0(Math.PI*d+2*hook)}`; }
+      return `3.1415${TIMES}${fmtN(d)} + 2${TIMES}${fmtN(hook)} = ${fmt0(Math.PI*d+2*hook)}`; }
     if(type==='diamond')
       return `4${TIMES}0.5${TIMES}√(${fmtN(a)}²+${fmtN(b)}²) + 2${TIMES}${fmtN(hook)} = ${fmt0(4*0.5*Math.sqrt(a*a+b*b)+2*hook)}`;
     if(type==='2-diamond')
@@ -132,9 +132,9 @@ const CLcalc = {
     return '';
   },
   circle:  ({dia,diaBar}) => { const d=dia+diaBar;
-    return `π(${fmtN(dia)} + ${fmtN(diaBar)}) + 24${TIMES}${fmtN(diaBar)} = ${fmt0(Math.PI*d+24*diaBar)}`; },
+    return `3.1415(${fmtN(dia)} + ${fmtN(diaBar)}) + 24${TIMES}${fmtN(diaBar)} = ${fmt0(Math.PI*d+24*diaBar)}`; },
   spiral:  ({dia,pitch,turns,diaBar}) => { const D=dia+diaBar;
-    return `√((π${TIMES}${fmtN(D)})² + ${fmtN(pitch)}²) ${TIMES} ${fmtN(turns)} + 8${TIMES}${fmtN(diaBar)} = ${fmt0(Math.sqrt((Math.PI*D)**2+pitch**2)*turns+8*diaBar)}`; },
+    return `√((3.1415${TIMES}${fmtN(D)})² + ${fmtN(pitch)}²) ${TIMES} ${fmtN(turns)} + 8${TIMES}${fmtN(diaBar)} = ${fmt0(Math.sqrt((Math.PI*D)**2+pitch**2)*turns+8*diaBar)}`; },
   crank:   ({span,depth,angle,dia}) => {
     const rad=angle*Math.PI/180, extra=depth*(1/Math.sin(rad)-1/Math.tan(rad)), d=bendDeduction(angle,dia);
     return `${fmtN(span)} + 2${TIMES}${fmtN(extra)} ${MINUS} 2${TIMES}${fmtN(d)} = ${fmt0(span+extra*2-2*d)}`; },
@@ -191,6 +191,7 @@ function recalcRow(row){
 
   row.clPerBarMm   = cl;
   try { row.clCalc = CLcalc[shape](a); } catch(_) {}
+  if(shape==='custom' && (ip.calc||ip.name)) row.clCalc = ip.calc||ip.name;
   row.unitWtKgPerM = wtPerM;
   row.totalLenM    = totalLenM;
   row.totalWtKg    = wtPerM * totalLenM;
@@ -468,7 +469,7 @@ $('#barForm').addEventListener('submit', e=>{
     shapeLabel=`Straight 90° hook (${a.ends==='both'?'both ends':'one end'})`;
   }else if(shape==='custom'){
     const a={items:customItems.filter(x=>x.type!=='deleted'),dia};
-    cl=CL.custom(a); clCalc=CLcalc.custom(a); shapeLabel=$('#customName').value.trim()||'Other shape';
+    cl=CL.custom(a); clCalc=CLcalc.custom(a); const cc=$('#customCalc').value.trim(); if(cc) clCalc=cc; shapeLabel='Other shape';
   }
 
   if(!isFinite(cl)||cl<=0){ if(window._showFeedback) window._showFeedback('⚠ Check dimensions — CL must be > 0','err'); else alert('Please provide valid dimensions. Cutting length must be > 0.'); return; }
@@ -509,7 +510,7 @@ $('#barForm').addEventListener('submit', e=>{
   else if(shape==='chair'){     row.inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)}; }
   else if(shape==='hook-semi'){ row.inputs={len:Number($('#HS_len').value),ends:$('#HS_ends').value}; }
   else if(shape==='hook-L'){    row.inputs={len:Number($('#HL_len').value),ends:$('#HL_ends').value}; }
-  else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted'),name:$('#customName').value.trim()}; }
+  else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted'),calc:$('#customCalc').value.trim()}; }
 
   let verb='Added';
   if(editIndex>=0 && editIndex<rows.length){ lastEditedIndex=editIndex; rows[editIndex]=row; verb='Updated'; editIndex=-1; }
@@ -697,7 +698,7 @@ function loadRow(i) {
   if (r.shape === 'hook-L')  { $('#HL_len').value = inp.len||''; $('#HL_ends').value = inp.ends||'both' }
   if (r.shape === 'custom') {
     resetCustom()
-    $('#customName').value = inp.name||''
+    $('#customCalc').value = inp.calc||inp.name||''
     for (const it of (inp.items||[])) {
       if (it.type === 'leg') addLeg(it.len);
       else if (it.type === 'bend') addBend(it.angle, it.hook);
