@@ -88,6 +88,15 @@ $('#saveSettings').addEventListener('click', () => {
   saveSettings(); renderSummary(); alert('Settings saved.');
 });
 $('#resetSettings').addEventListener('click', () => { resetSettings(); alert('Settings reset to defaults.'); });
+/* Wipe ALL saved data for this tool (schedule, project info, settings, theme,
+   pagination) and reset settings to defaults. Reloads so the app re-initialises
+   exactly like a first visit. */
+$('#clearStorage').addEventListener('click', () => {
+  if (!confirm('Erase ALL saved data — schedule, project info, settings and theme — and reset everything to defaults?\n\nThis cannot be undone.')) return;
+  try { localStorage.clear(); } catch (_) {}
+  try { sessionStorage.clear(); } catch (_) {}
+  location.reload();
+});
 $('#btnSettings').addEventListener('click', () => {
   const isOpen = !$('#settingsPanel').classList.contains('collapsed');
   $('#infoPanel').classList.add('collapsed');
@@ -252,6 +261,42 @@ function computeEntry(){
     dimsLabel: geom.dimsLabel, sectionLabel: geom.sectionLabel,
   };
 }
+/* Rebuild a stored row's concrete volume, formwork area and worked calcs from
+   its saved section dimensions using the current geometry rules — mirrors
+   computeEntry() but reads row.inputs.dims instead of the DOM. Length, nos,
+   formwork mode and end-faces are kept as stored. Returns true if refreshed. */
+function recalcRow(row){
+  if (!row || !row.inputs || !row.inputs.dims || !row.section) return false;
+  let geom;
+  try { geom = sectionGeom(row.section, row.inputs.dims); } catch (_) { return false; }
+  if (!geom || !(geom.areaMm2 > 0)) return false;
+
+  const dims   = row.inputs.dims;
+  const areaM2 = geom.areaMm2 / 1e6;
+  const L      = Number(row.lengthM) || 0;
+  const nos    = Math.max(0, Math.floor(Number(row.nos) || 0));
+  const mode   = geom.fwModes.find(o => o.id === row.fwModeId) || geom.fwModes[0];
+  const psM    = (mode ? mode.Ps : 0) / 1000;
+  const ends   = !!row.ends;
+  const endArea = ends ? 2 * areaM2 : 0;
+  const volM3  = areaM2 * L * nos;
+  const fwM2   = (psM * L + endArea) * nos;
+
+  row.areaM2      = areaM2;
+  row.psM         = psM;
+  row.volM3       = volM3;
+  row.fwM2        = fwM2;
+  row.fwModeLabel = mode ? mode.label : '—';
+  row.sectionLabel = geom.sectionLabel;
+  row.dimsLabel    = geom.dimsLabel;
+  row.volCalc = dims.areaCalc
+    ? `(${dims.areaCalc}) ${TIMES} ${fmtL(L)} ${TIMES} ${nos} = ${fmt3(volM3)}`
+    : `${fmt4(areaM2)} ${TIMES} ${fmtL(L)} ${TIMES} ${nos} = ${fmt3(volM3)}`;
+  row.fwCalc = dims.perimCalc
+    ? `(${dims.perimCalc}) ${TIMES} ${fmtL(L)}${endArea ? ` + ${fmt3(endArea)}` : ''} ${TIMES} ${nos} = ${fmt3(fwM2)}`
+    : `${fmt3(psM)} ${TIMES} ${fmtL(L)}${endArea ? ` + ${fmt3(endArea)}` : ''} ${TIMES} ${nos} = ${fmt3(fwM2)}`;
+  return true;
+}
 function updatePreview(){
   const e = computeEntry();
   $('#areaPreview').textContent = fmt4(e.areaM2);
@@ -272,46 +317,66 @@ let navPersistTimer = null
 let lastEditedIndex = -1
 const DEFAULT_PAGE_SIZE = 25
 let pageSize = DEFAULT_PAGE_SIZE
+let searchTerm = ''
 function persist(){ localStorage.setItem('cfs_rows', JSON.stringify(rows)); }
+
+/* Free-text row matcher for the schedule search box. */
+function rowMatchesSearch(r, t){
+  return (r.member && r.member.toLowerCase().includes(t)) ||
+         (r.mark && r.mark.toLowerCase().includes(t)) ||
+         (r.element && r.element.toLowerCase().includes(t)) ||
+         (r.sectionLabel && r.sectionLabel.toLowerCase().includes(t)) ||
+         (r.dimsLabel && r.dimsLabel.toLowerCase().includes(t)) ||
+         (r.grade && r.grade.toLowerCase().includes(t)) ||
+         (r.remarks && r.remarks.toLowerCase().includes(t));
+}
 
 function shapeSrc(r){
   if (r && r.shapeVec && window.ShapeVector) return ShapeVector.toDataURL(r.shapeVec);
   return (r && r.shapeImg) || '';
 }
-function recalcSums(){
-  const totVol = rows.reduce((a,r)=>a+r.volM3,0);
-  const totFw  = rows.reduce((a,r)=>a+r.fwM2,0);
+function recalcSums(filtered){
+  const items = filtered || rows;
+  const totVol = items.reduce((a,r)=>a+r.volM3,0);
+  const totFw  = items.reduce((a,r)=>a+r.fwM2,0);
   $('#sumVol').textContent = fmt3(totVol);
   $('#sumFw').textContent  = fmt3(totFw);
-  $('#countBadge').textContent = `${rows.length} item${rows.length!==1?'s':''}`;
+  const total = rows.length, shown = items.length;
+  $('#countBadge').textContent = shown < total
+    ? `${shown} / ${total} item${total!==1?'s':''}`
+    : `${total} item${total!==1?'s':''}`;
 }
-function renderPagination() {
+function renderPagination(visibleCount) {
   const el = $('#paginationControls')
   if (!el) return
-  if (!pageSize || pageSize <= 0 || rows.length <= pageSize) {
+  const count = visibleCount != null ? visibleCount : rows.length
+  if (!pageSize || pageSize <= 0 || count <= pageSize) {
     el.style.display = 'none'
     return
   }
   el.style.display = 'inline-flex'
   el.style.alignItems = 'center'
   el.style.gap = '4px'
-  $('#pageInfo').textContent = `Page ${currentPage} of ${getPageCount()}`
+  const maxPage = Math.max(1, Math.ceil(count / pageSize))
+  $('#pageInfo').textContent = `Page ${currentPage} of ${maxPage}`
   $('#prevPage').disabled = currentPage <= 1
-  $('#nextPage').disabled = currentPage >= getPageCount()
+  $('#nextPage').disabled = currentPage >= maxPage
 }
-function gradeSummary(){
+function gradeSummary(filtered){
+  const items = filtered || rows;
   const map = {};
-  rows.forEach(r => { map[r.grade] = (map[r.grade]||0) + r.volM3; });
+  items.forEach(r => { map[r.grade] = (map[r.grade]||0) + r.volM3; });
   return map;
 }
-function renderSummary(){
+function renderSummary(filtered){
+  const items = filtered || rows;
   const bar = $('#summaryBar');
-  if (!rows.length) { bar.innerHTML = ''; return; }
-  const totVol = rows.reduce((a,r)=>a+r.volM3,0);
-  const totFw  = rows.reduce((a,r)=>a+r.fwM2,0);
+  if (!items.length) { bar.innerHTML = ''; return; }
+  const totVol = items.reduce((a,r)=>a+r.volM3,0);
+  const totFw  = items.reduce((a,r)=>a+r.fwM2,0);
   const gVol = totVol * (1 + settings.concWastage/100);
   const gFw  = totFw  * (1 + settings.fwWastage/100);
-  const grades = gradeSummary();
+  const grades = gradeSummary(items);
   const chip = (label, val) => `<span class="sum-chip">${label} <b>${val}</b></span>`;
   let html = '';
   html += chip('Net concrete', `${fmt3(totVol)} m³`);
@@ -328,11 +393,29 @@ function renderSummary(){
 }
 function render(){
   const tbody = $('#tbody'); tbody.innerHTML = '';
-  clampPage()
-  const pageRows = getPageRows()
-  const offset = pageSize > 0 ? (currentPage - 1) * pageSize : 0
+
+  // Search filter → visible rows plus their original indices (so the row
+  // number and Edit/Delete/options still point at the right rows[] entry).
+  let visibleRows, visibleIndices;
+  if (searchTerm) {
+    const t = searchTerm.toLowerCase();
+    visibleIndices = [];
+    rows.forEach((r, i) => { if (rowMatchesSearch(r, t)) visibleIndices.push(i); });
+    visibleRows = visibleIndices.map(i => rows[i]);
+  } else {
+    visibleRows = rows;
+    visibleIndices = rows.map((_, i) => i);
+  }
+
+  const visibleCount = visibleRows.length;
+  const maxPage = pageSize > 0 ? Math.max(1, Math.ceil(visibleCount / pageSize)) : 1;
+  if (currentPage > maxPage) currentPage = maxPage;
+  if (currentPage < 1) currentPage = 1;
+  const offset = pageSize > 0 ? (currentPage - 1) * pageSize : 0;
+  const pageRows = pageSize > 0 ? visibleRows.slice(offset, offset + pageSize) : visibleRows;
+
   pageRows.forEach((r,i) => {
-    const idx = offset + i
+    const idx = visibleIndices[offset + i]
     const src = shapeSrc(r);
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -366,9 +449,9 @@ function render(){
     tr.setAttribute('draggable','true');
     tbody.appendChild(tr);
   });
-  recalcSums();
-  renderSummary();
-  renderPagination()
+  recalcSums(visibleRows);
+  renderSummary(visibleRows);
+  renderPagination(visibleCount)
   updateRecordNav()
   localStorage.setItem('cfs_page', String(currentPage))
 }
@@ -701,6 +784,87 @@ $('#exportCSV').addEventListener('click', () => {
 });
 
 /* =========================
+   CSV Import  (re-imports the exported schedule; rounds-trips the table)
+   ========================= */
+$('#importCSV').addEventListener('click', () => {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,text/csv';
+  inp.onchange = () => {
+    const file = inp.files[0]; if (!file) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        let raw = String(fr.result);
+        if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);   // strip UTF-8 BOM
+        const allLines = raw.split(/\r?\n/);
+        // The export decorates the file with a title + project-info lines before
+        // the real table. Start parsing at the table header (the row naming both
+        // Member and Section) so those lines aren't mistaken for column headers.
+        const hi = allLines.findIndex(l => /member/i.test(l) && /section/i.test(l));
+        const tableText = (hi >= 0 ? allLines.slice(hi) : allLines).join('\n');
+        const result = Papa.parse(tableText, { header: true, skipEmptyLines: true });
+        if (result.errors.length) console.warn('CSV parse warnings:', result.errors);
+
+        // Project info sits in plain lines before the table header.
+        for (const rawLine of allLines) {
+          const line = rawLine.trim();
+          const grab = () => line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
+          if (/^name of work/i.test(line))        { const v = grab(); if (v && v !== '-') projectInfo.project = v; }
+          else if (/^name of agency/i.test(line)) { const v = grab(); if (v && v !== '-') projectInfo.agency  = v; }
+          else if (/^reference/i.test(line))      { const v = grab(); if (v && v !== '-') projectInfo.ref     = v; }
+        }
+        applyInfoToForm(); saveInfoToStorage(); updatePrintMeta();
+
+        const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.+\-eE]/g, '')); return isFinite(n) ? n : 0; };
+        const imported = [];
+        for (const r of (result.data || [])) {
+          const get = name => { for (const k of Object.keys(r)) if (k.trim().toLowerCase() === name) return r[k]; return ''; };
+          const member = String(get('member') || '').trim();
+          if (!member) continue;
+          // Real entries carry a numeric serial in the '#' column; the Totals row
+          // and the trailing grade/wastage summary lines do not — drop them.
+          const hasSerial = Object.keys(r).some(k => k.trim() === '#');
+          if (hasSerial && !/^\d+$/.test(String(get('#') || '').trim())) continue;
+          imported.push({
+            member,
+            mark:    String(get('mark') || '').trim(),
+            element: String(get('element') || '').trim(),
+            grade:   String(get('grade') || settings.defaultGrade).trim(),
+            section: 'custom',
+            sectionLabel: String(get('section') || '').trim(),
+            dimsLabel:    String(get('dimensions') || '').trim(),
+            areaM2: 0,
+            lengthM: num(get('length (m)')),
+            nos: Math.max(0, Math.floor(num(get('nos')))),
+            fwModeId: 'none',
+            fwModeLabel: String(get('formwork faces') || '—').trim(),
+            psM: 0,
+            ends: false,
+            volM3: num(get('volume (m3)')),
+            volCalc: String(get('volume calc') || '').trim(),
+            fwM2: num(get('formwork (m2)')),
+            fwCalc: String(get('formwork calc') || '').trim(),
+            remarks: String(get('remarks') || '').trim(),
+            createdAt: Date.now() + imported.length,
+            shapeVec: null, shapeHist: null, shapeImg: null,
+            inputs: {}
+          });
+        }
+        if (!imported.length) { alert('No valid rows found in CSV.'); return; }
+        rows.push(...imported);
+        sortRowsByMemberGroup();
+        persist(); render();
+        feedback(`✔ Imported ${imported.length} row${imported.length === 1 ? '' : 's'} from CSV`, 'ok');
+      } catch (err) {
+        console.error('CSV import failed:', err);
+        alert('Failed to parse CSV. See console for details.');
+      }
+    };
+    fr.readAsText(file);
+  };
+  inp.click();
+});
+
+/* =========================
    Save / Load JSON
    ========================= */
 $('#saveJSON').addEventListener('click', () => {
@@ -737,6 +901,21 @@ $('#loadJSON').addEventListener('click', () => {
    ========================= */
 $('#clearAll').addEventListener('click', () => {
   if (confirm('Clear the entire schedule?')) { rows = []; editIndex = -1; persist(); render(); }
+});
+
+/* =========================
+   Force recalculation
+   Recompute every row's concrete volume & formwork area from its saved section
+   dimensions using the current geometry rules.
+   ========================= */
+$('#recalcAll').addEventListener('click', () => {
+  if (!rows.length) { feedback('Nothing to recalculate', 'err'); return; }
+  let n = 0, skipped = 0;
+  rows.forEach(r => { if (recalcRow(r)) n++; else skipped++; });
+  persist(); render();
+  const tail = skipped ? ` · ${skipped} skipped` : '';
+  if (n) feedback(`✔ Recalculated ${n} row${n === 1 ? '' : 's'}${tail}`, 'ok');
+  else   feedback(`Could not recalculate — ${skipped} row${skipped === 1 ? '' : 's'} missing saved dimensions`, 'err');
 });
 
 /* =========================
@@ -1124,6 +1303,14 @@ function initPagination() {
     currentPage = 1
     render()
   })
+  const searchInput = $('#searchInput')
+  if (searchInput) {
+    searchInput.addEventListener('input', e => {
+      searchTerm = e.target.value.trim()
+      currentPage = 1
+      render()
+    })
+  }
 }
 
 /* =========================

@@ -22,6 +22,7 @@
     <a class="btn small ghost nav-link" href="index.html" title="Bar Bending Schedule">🔩 Bar Bending</a>
     <button class="btn small ghost" id="btnInfo"     title="Project Info (Alt+I)">ℹ️ Info</button>
     <button class="btn small ghost" id="btnSettings" title="Settings (Alt+S)">⚙️ Settings</button>
+    <button class="btn small ghost danger" id="clearStorage" title="Erase all saved data (schedule, project info, settings, theme) and reset to defaults">🧹 Clear Storage</button>
     <button class="btn small ghost" id="btnHelp"     title="Help (Alt+H)">❓ Help</button>
     <button class="theme-toggle" id="themeToggle" title="Toggle theme">
       <span id="themeIcon">🧱</span>
@@ -252,7 +253,9 @@
       <h2 style="margin:0">Schedule</h2>
       <span class="pill" id="countBadge">0 items</span>
       <div class="space"></div>
+      <input type="search" id="searchInput" placeholder="🔍 Search schedule…" style="width:170px;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text)" />
       <button class="btn small" id="exportCSV" tabindex="40">⬇️ CSV</button>
+      <button class="btn small" id="importCSV" tabindex="40">⬆️ CSV Import</button>
       <button class="btn small" id="saveJSON"  tabindex="41">💾 Save</button>
       <button class="btn small" id="loadJSON"  tabindex="42">📂 Load</button>
       <label id="pdfTexturedLabel" title="Draw the rebar/3D texture for any textured sketches in the PDF (vector — larger file). Off = clean lines (smallest)."
@@ -260,6 +263,7 @@
         <input type="checkbox" id="pdfTextured" style="width:auto;margin:0"> Textured
       </label>
       <button class="btn small warn"   id="printBBS" tabindex="43">📄 Export PDF</button>
+      <button class="btn small" id="recalcAll" tabindex="44" title="Recalculate concrete volume & formwork area for every row from its saved dimensions">🔄 Recalculate</button>
       <button class="btn small danger" id="clearAll"  tabindex="44">🗑️ Clear</button>
     </div>
 
