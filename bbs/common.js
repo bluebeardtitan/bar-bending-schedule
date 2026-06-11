@@ -45,3 +45,188 @@ function clampPage() {
   if (currentPage > max) currentPage = max;
   if (currentPage < 1) currentPage = 1;
 }
+
+/* =========================================================================
+   Shared chrome for the BBS and CFS pages. Each page supplies its own
+   `rows`, `render`, `persist`, `navRecord`, `resetSettings`, `searchTerm`,
+   `currentPage`, `pageSize` globals; the helpers below reference them by
+   name at event time, so they resolve against whichever page is loaded.
+   ========================================================================= */
+
+/* ---- Project info (shared storage key 'bbs_info') ---- */
+const INFO_DEFAULTS = { header: '', project: '', agency: '', ref: '' };
+let projectInfo = loadInfo();
+function loadInfo() {
+  const s = localStorage.getItem('bbs_info');
+  return Object.assign({}, INFO_DEFAULTS, s ? JSON.parse(s) : {});
+}
+function saveInfoToStorage() { localStorage.setItem('bbs_info', JSON.stringify(projectInfo)); }
+function applyInfoToForm() {
+  $('#infoHeader').value  = projectInfo.header  || '';
+  $('#infoProject').value = projectInfo.project || '';
+  $('#infoAgency').value  = projectInfo.agency  || '';
+  $('#infoRef').value     = projectInfo.ref     || '';
+}
+function readInfoFromForm() {
+  projectInfo.header  = $('#infoHeader').value.trim();
+  projectInfo.project = $('#infoProject').value.trim();
+  projectInfo.agency  = $('#infoAgency').value.trim();
+  projectInfo.ref     = $('#infoRef').value.trim();
+}
+function updatePrintMeta() {
+  const r = txt => escapeHTML(txt || '—').replace(/\r?\n/g, '<br>');
+  $('#pmProject').innerHTML = r(projectInfo.project);
+  $('#pmAgency').innerHTML  = r(projectInfo.agency);
+  $('#pmRef').innerHTML     = r(projectInfo.ref);
+  const titleEl = $('#pmHeaderTitle');
+  if (projectInfo.header) { titleEl.innerHTML = escapeHTML(projectInfo.header).replace(/\r?\n/g, '<br>'); titleEl.style.display = 'block'; }
+  else { titleEl.textContent = ''; titleEl.style.display = 'none'; }
+}
+
+/* ---- Form feedback toast (BBS used window._showFeedback; keep that alias) ---- */
+function feedback(msg, type, ms = 2800) {
+  const fb = $('#formFeedback');
+  if (!fb) return;
+  fb.textContent = msg;
+  fb.className = 'form-feedback ' + (type || '');
+  clearTimeout(fb._t);
+  fb._t = setTimeout(() => { fb.textContent = ''; fb.className = 'form-feedback'; }, ms);
+}
+window._showFeedback = feedback;
+
+/* ---- Search-aware pagination (render() builds the visible set) ---- */
+function renderPagination(visibleCount) {
+  const el = $('#paginationControls');
+  if (!el) return;
+  const count = visibleCount != null ? visibleCount : rows.length;
+  if (!pageSize || pageSize <= 0 || count <= pageSize) { el.style.display = 'none'; return; }
+  el.style.display = 'inline-flex'; el.style.alignItems = 'center'; el.style.gap = '4px';
+  const maxPage = Math.max(1, Math.ceil(count / pageSize));
+  $('#pageInfo').textContent = `Page ${currentPage} of ${maxPage}`;
+  $('#prevPage').disabled = currentPage <= 1;
+  $('#nextPage').disabled = currentPage >= maxPage;
+}
+function initPagination(sizes) {
+  if ($('#paginationControls')) return;
+  const opts = (sizes || [10, 25, 50, 0])
+    .map(n => `<option value="${n}"${n === 25 ? ' selected' : ''}>${n === 0 ? 'All' : n}</option>`).join('');
+  const el = document.createElement('span');
+  el.id = 'paginationControls'; el.style.display = 'none';
+  el.innerHTML = `
+    <button class="btn small ghost" id="prevPage" title="Previous page">◀</button>
+    <span id="pageInfo" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px">Page 1 of 1</span>
+    <button class="btn small ghost" id="nextPage" title="Next page">▶</button>
+    <select id="pageSizeSelect" style="width:auto;padding:3px 5px;font-size:11px;margin-left:2px">${opts}</select>`;
+  const badge = $('#countBadge');
+  if (badge && badge.parentNode) badge.after(el);
+  $('#prevPage').addEventListener('click', () => { if (currentPage > 1) { currentPage--; render(); } });
+  $('#nextPage').addEventListener('click', () => { if (currentPage < getPageCount()) { currentPage++; render(); } });
+  $('#pageSizeSelect').addEventListener('change', e => { pageSize = Number(e.target.value); currentPage = 1; render(); });
+  const search = $('#searchInput');
+  if (search) search.addEventListener('input', e => { searchTerm = e.target.value.trim(); currentPage = 1; render(); });
+}
+
+/* ---- Record navigation strip (each page defines navRecord/loadRow) ---- */
+function updateRecordNav() {
+  const btns = document.querySelector('.nav-record-btns');
+  if (!btns) return;
+  if (editIndex < 0 && !navPersistTimer) { btns.style.display = 'none'; return; }
+  btns.style.display = 'inline-flex'; btns.style.alignItems = 'center'; btns.style.gap = '2px';
+  const idx = editIndex >= 0 ? editIndex : lastEditedIndex;
+  $('#prevRecord').disabled = idx <= 0;
+  $('#nextRecord').disabled = idx >= rows.length - 1;
+  $('#recordNavInfo').textContent = `${idx + 1} / ${rows.length}`;
+}
+
+/* ---- Theme toggle (shared key 'bbs_theme') ---- */
+function initTheme(cfg) {
+  const root = document.documentElement;
+  const icon = document.getElementById('themeIcon');
+  const lbl  = document.getElementById('themeLabel');
+  const apply = t => {
+    root.dataset.theme = t;
+    const c = (t === 'light' ? cfg.light : cfg.dark);
+    if (icon) icon.textContent = c.icon;
+    if (lbl)  lbl.textContent  = c.label;
+  };
+  apply(localStorage.getItem('bbs_theme') || 'light');
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.addEventListener('click', () => {
+    const next = root.dataset.theme === 'light' ? 'dark' : 'light';
+    apply(next); localStorage.setItem('bbs_theme', next);
+  });
+}
+
+/* ---- Drag-and-drop row reorder (tr.dataset.index = original rows[] index) ---- */
+function initDragReorder() {
+  const tbody = $('#tbody');
+  if (!tbody) return;
+  let dragged = null;
+  tbody.addEventListener('dragstart', e => { dragged = e.target.closest('tr'); if (dragged) { e.dataTransfer.effectAllowed = 'move'; dragged.classList.add('dragging'); } });
+  tbody.addEventListener('dragenter', e => { e.preventDefault(); const t = e.target.closest('tr'); if (t && t !== dragged) t.classList.add('drag-over'); });
+  tbody.addEventListener('dragleave', e => { const t = e.target.closest('tr'); if (t) t.classList.remove('drag-over'); });
+  tbody.addEventListener('dragover',  e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+  tbody.addEventListener('drop', e => {
+    e.preventDefault();
+    const drop = e.target.closest('tr');
+    if (dragged && drop && dragged !== drop) {
+      const oi = parseInt(dragged.dataset.index), di = parseInt(drop.dataset.index);
+      let ni = oi < di ? di + 1 : di;
+      const [rm] = rows.splice(oi, 1);
+      if (oi < ni) ni--;
+      rows.splice(ni, 0, rm);
+      persist(); render();
+    }
+  });
+  tbody.addEventListener('dragend', () => {
+    if (dragged) dragged.classList.remove('dragging');
+    document.querySelectorAll('#tbody .drag-over').forEach(el => el.classList.remove('drag-over'));
+    dragged = null;
+  });
+}
+
+/* ---- Keyboard shortcuts (Alt+I/S/H, Esc reset, Enter submit) ---- */
+function initShortcuts(formSel) {
+  document.addEventListener('keydown', e => {
+    if (e.altKey && e.key === 'i') { e.preventDefault(); document.getElementById('btnInfo').click(); }
+    if (e.altKey && e.key === 's') { e.preventDefault(); document.getElementById('btnSettings').click(); }
+    if (e.altKey && e.key === 'h') { e.preventDefault(); document.getElementById('btnHelp').click(); }
+    const form = document.querySelector(formSel);
+    if (e.key === 'Escape' && form && form.contains(document.activeElement)) document.getElementById('reset').click();
+  });
+  const form = document.querySelector(formSel);
+  if (form) form.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'submit') { e.preventDefault(); form.requestSubmit(); }
+  });
+}
+
+/* ---- Wire all shared chrome. Call once from each page's init, after that
+       page has defined render/persist/rows/navRecord/resetSettings. ---- */
+function initCommonChrome(opts) {
+  opts = opts || {};
+  const on = (sel, fn) => { const el = $(sel); if (el) el.addEventListener('click', fn); };
+  // Info panel
+  on('#btnInfo', () => { $('#infoPanel').classList.toggle('collapsed'); $('#settingsPanel').classList.add('collapsed'); });
+  on('#saveInfo', () => { readInfoFromForm(); saveInfoToStorage(); updatePrintMeta(); alert('Project info saved.'); });
+  on('#clearInfo', () => { projectInfo = Object.assign({}, INFO_DEFAULTS); applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); });
+  // Settings panel toggle + help + reset + clear storage
+  on('#btnSettings', () => { const open = !$('#settingsPanel').classList.contains('collapsed'); $('#infoPanel').classList.add('collapsed'); $('#settingsPanel').classList.toggle('collapsed', open); });
+  on('#btnHelp', () => document.getElementById('helpDlg').showModal());
+  on('#resetSettings', () => { resetSettings(); alert('Settings reset to defaults.'); });
+  on('#clearStorage', () => {
+    if (!confirm('Erase ALL saved data — schedule, project info, settings and theme — and reset everything to defaults?\n\nThis cannot be undone.')) return;
+    try { localStorage.clear(); } catch (_) {}
+    try { sessionStorage.clear(); } catch (_) {}
+    location.reload();
+  });
+  // Close any open options menu on outside click
+  document.addEventListener('click', e => { if (!e.target.closest('.options-menu') && !e.target.closest('.options-btn')) closeOptionsMenus(); });
+  // Record navigation buttons
+  on('#prevRecord', () => navRecord(-1));
+  on('#nextRecord', () => navRecord(+1));
+  // Theme, shortcuts, drag-reorder, pagination
+  initTheme(opts.theme || { light: { icon: '🔩', label: 'Rust' }, dark: { icon: '⚙️', label: 'Steel' } });
+  initShortcuts(opts.formSelector || '#barForm');
+  initDragReorder();
+  initPagination(opts.pageSizes);
+}

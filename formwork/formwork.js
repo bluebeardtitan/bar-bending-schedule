@@ -13,50 +13,8 @@ const fmtDim = n => String(Math.round(Number(n)||0)); // whole mm
 const TIMES = '×';
 const money = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
 
-/* =========================
-   Project Info  (shared with BBS via the same storage key)
-   ========================= */
-const INFO_DEFAULTS = { header:'', project:'', agency:'', ref:'' };
-let projectInfo = loadInfo();
-function loadInfo(){
-  const s = localStorage.getItem('bbs_info');
-  return Object.assign({}, INFO_DEFAULTS, s ? JSON.parse(s) : {});
-}
-function saveInfoToStorage(){ localStorage.setItem('bbs_info', JSON.stringify(projectInfo)); }
-function applyInfoToForm(){
-  $('#infoHeader').value  = projectInfo.header  || '';
-  $('#infoProject').value = projectInfo.project || '';
-  $('#infoAgency').value  = projectInfo.agency  || '';
-  $('#infoRef').value     = projectInfo.ref     || '';
-}
-function readInfoFromForm(){
-  projectInfo.header  = $('#infoHeader').value.trim();
-  projectInfo.project = $('#infoProject').value.trim();
-  projectInfo.agency  = $('#infoAgency').value.trim();
-  projectInfo.ref     = $('#infoRef').value.trim();
-}
-function updatePrintMeta(){
-  const render = txt => escapeHTML(txt || '—').replace(/\r?\n/g,'<br>');
-  $('#pmProject').innerHTML = render(projectInfo.project);
-  $('#pmAgency').innerHTML  = render(projectInfo.agency);
-  $('#pmRef').innerHTML     = render(projectInfo.ref);
-  const titleEl = $('#pmHeaderTitle');
-  if (projectInfo.header) {
-    titleEl.innerHTML = escapeHTML(projectInfo.header).replace(/\r?\n/g,'<br>');
-    titleEl.style.display = 'block';
-  } else { titleEl.textContent = ''; titleEl.style.display = 'none'; }
-}
-$('#btnInfo').addEventListener('click', () => {
-  $('#infoPanel').classList.toggle('collapsed');
-  $('#settingsPanel').classList.add('collapsed');
-});
-$('#saveInfo').addEventListener('click', () => {
-  readInfoFromForm(); saveInfoToStorage(); updatePrintMeta(); alert('Project info saved (shared with BBS).');
-});
-$('#clearInfo').addEventListener('click', () => {
-  projectInfo = Object.assign({}, INFO_DEFAULTS);
-  applyInfoToForm(); saveInfoToStorage(); updatePrintMeta();
-});
+/* Project info (INFO_DEFAULTS, projectInfo, load/save/apply/read + print meta)
+   and the Info-panel wiring live in common.js, shared with the BBS page. */
 
 /* =========================
    Settings
@@ -87,22 +45,7 @@ $('#saveSettings').addEventListener('click', () => {
   settings.fwRate       = Number($('#fwRate').value)||0;
   saveSettings(); renderSummary(); alert('Settings saved.');
 });
-$('#resetSettings').addEventListener('click', () => { resetSettings(); alert('Settings reset to defaults.'); });
-/* Wipe ALL saved data for this tool (schedule, project info, settings, theme,
-   pagination) and reset settings to defaults. Reloads so the app re-initialises
-   exactly like a first visit. */
-$('#clearStorage').addEventListener('click', () => {
-  if (!confirm('Erase ALL saved data — schedule, project info, settings and theme — and reset everything to defaults?\n\nThis cannot be undone.')) return;
-  try { localStorage.clear(); } catch (_) {}
-  try { sessionStorage.clear(); } catch (_) {}
-  location.reload();
-});
-$('#btnSettings').addEventListener('click', () => {
-  const isOpen = !$('#settingsPanel').classList.contains('collapsed');
-  $('#infoPanel').classList.add('collapsed');
-  $('#settingsPanel').classList.toggle('collapsed', isOpen);
-});
-$('#btnHelp').addEventListener('click', () => document.getElementById('helpDlg').showModal());
+/* Reset/Clear-storage/Settings-toggle/Help wiring lives in common.js. */
 
 /* =========================
    Section geometry engine
@@ -345,22 +288,6 @@ function recalcSums(filtered){
   $('#countBadge').textContent = shown < total
     ? `${shown} / ${total} item${total!==1?'s':''}`
     : `${total} item${total!==1?'s':''}`;
-}
-function renderPagination(visibleCount) {
-  const el = $('#paginationControls')
-  if (!el) return
-  const count = visibleCount != null ? visibleCount : rows.length
-  if (!pageSize || pageSize <= 0 || count <= pageSize) {
-    el.style.display = 'none'
-    return
-  }
-  el.style.display = 'inline-flex'
-  el.style.alignItems = 'center'
-  el.style.gap = '4px'
-  const maxPage = Math.max(1, Math.ceil(count / pageSize))
-  $('#pageInfo').textContent = `Page ${currentPage} of ${maxPage}`
-  $('#prevPage').disabled = currentPage <= 1
-  $('#nextPage').disabled = currentPage >= maxPage
 }
 function gradeSummary(filtered){
   const items = filtered || rows;
@@ -647,14 +574,9 @@ $('#bbsTable').addEventListener('click', e => {
   }
 });
 
-document.addEventListener('click', e => {
-  if (!e.target.closest('.options-menu') && !e.target.closest('.options-btn')) {
-    closeOptionsMenus()
-  }
-})
-
 /* =========================
-   Record navigation (prev/next in add bar)
+   Record navigation — loadRow + navRecord are page-specific; updateRecordNav
+   and the button wiring live in common.js.
    ========================= */
 function loadRow(i) {
   const r = rows[i]
@@ -706,21 +628,6 @@ function navRecord(dir) {
   loadRow(target)
 }
 
-function updateRecordNav() {
-  const btns = document.querySelector('.nav-record-btns')
-  if (!btns) return
-  if (editIndex < 0 && !navPersistTimer) { btns.style.display = 'none'; return }
-  btns.style.display = 'inline-flex'
-  btns.style.alignItems = 'center'
-  btns.style.gap = '2px'
-  const idx = editIndex >= 0 ? editIndex : lastEditedIndex
-  $('#prevRecord').disabled = idx <= 0
-  $('#nextRecord').disabled = idx >= rows.length - 1
-  $('#recordNavInfo').textContent = `${idx + 1} / ${rows.length}`
-}
-
-$('#prevRecord').addEventListener('click', () => navRecord(-1))
-$('#nextRecord').addEventListener('click', () => navRecord(+1))
 
 /* =========================
    CSV Export  (uses Papa Parse)
@@ -918,34 +825,7 @@ $('#recalcAll').addEventListener('click', () => {
   else   feedback(`Could not recalculate — ${skipped} row${skipped === 1 ? '' : 's'} missing saved dimensions`, 'err');
 });
 
-/* =========================
-   Drag & Drop reorder
-   ========================= */
-let draggedItem = null;
-$('#tbody').addEventListener('dragstart', e => {
-  draggedItem = e.target.closest('tr');
-  if (draggedItem) { e.dataTransfer.effectAllowed='move'; draggedItem.classList.add('dragging'); }
-});
-$('#tbody').addEventListener('dragenter', e => { e.preventDefault(); const t=e.target.closest('tr'); if (t&&t!==draggedItem) t.classList.add('drag-over'); });
-$('#tbody').addEventListener('dragleave', e => { const t=e.target.closest('tr'); if (t) t.classList.remove('drag-over'); });
-$('#tbody').addEventListener('dragover',  e => { e.preventDefault(); e.dataTransfer.dropEffect='move'; });
-$('#tbody').addEventListener('drop', e => {
-  e.preventDefault();
-  const drop = e.target.closest('tr');
-  if (draggedItem && drop && draggedItem !== drop) {
-    const oi = parseInt(draggedItem.dataset.index), di = parseInt(drop.dataset.index);
-    let ni = oi < di ? di+1 : di;
-    const [rm] = rows.splice(oi,1);
-    if (oi < ni) ni--;
-    rows.splice(ni,0,rm);
-    persist(); render();
-  }
-});
-$('#tbody').addEventListener('dragend', () => {
-  if (draggedItem) draggedItem.classList.remove('dragging');
-  document.querySelectorAll('#tbody .drag-over').forEach(el => el.classList.remove('drag-over'));
-  draggedItem = null;
-});
+/* Drag & Drop row reorder is wired by initDragReorder() in common.js. */
 
 /* =========================
    Section Sketch — upload + drawer
@@ -1269,94 +1149,9 @@ $('#printBBS').addEventListener('click', async () => {
   }
 });
 
-/* =========================
-   Pagination controls
-   ========================= */
-function initPagination() {
-  if ($('#paginationControls')) return
-  const el = document.createElement('span')
-  el.id = 'paginationControls'
-  el.style.display = 'none'
-  el.innerHTML = `
-    <button class="btn small ghost" id="prevPage" title="Previous page">◀</button>
-    <span id="pageInfo" style="font-size:11px;color:var(--muted);white-space:nowrap;padding:0 4px">Page 1 of 1</span>
-    <button class="btn small ghost" id="nextPage" title="Next page">▶</button>
-    <select id="pageSizeSelect" style="width:auto;padding:3px 5px;font-size:11px;margin-left:2px">
-      <option value="25" selected>25</option>
-      <option value="50">50</option>
-      <option value="100">100</option>
-      <option value="0">All</option>
-    </select>
-  `
-  const badge = $('#countBadge')
-  if (badge && badge.parentNode) {
-    badge.after(el)
-  }
-  $('#prevPage').addEventListener('click', () => {
-    if (currentPage > 1) { currentPage--; render() }
-  })
-  $('#nextPage').addEventListener('click', () => {
-    if (currentPage < getPageCount()) { currentPage++; render() }
-  })
-  $('#pageSizeSelect').addEventListener('change', e => {
-    pageSize = Number(e.target.value)
-    currentPage = 1
-    render()
-  })
-  const searchInput = $('#searchInput')
-  if (searchInput) {
-    searchInput.addEventListener('input', e => {
-      searchTerm = e.target.value.trim()
-      currentPage = 1
-      render()
-    })
-  }
-}
-
-/* =========================
-   Light / Dark Theme Toggle  (shared key with BBS)
-   ========================= */
-(function(){
-  const root = document.documentElement;
-  const btn  = document.getElementById('themeToggle');
-  const icon = document.getElementById('themeIcon');
-  const lbl  = document.getElementById('themeLabel');
-  const saved = localStorage.getItem('bbs_theme') || 'light';
-  applyTheme(saved);
-  btn.addEventListener('click', () => {
-    const next = root.dataset.theme === 'light' ? 'dark' : 'light';
-    applyTheme(next); localStorage.setItem('bbs_theme', next);
-  });
-  function applyTheme(t){
-    root.dataset.theme = t;
-    if (t === 'light') { icon.textContent = '🧱'; lbl.textContent = 'Rust'; }
-    else               { icon.textContent = '🏗️'; lbl.textContent = 'Steel'; }
-  }
-})();
-
-/* =========================
-   Keyboard shortcuts + feedback
-   ========================= */
-function feedback(msg, type, ms=2800){
-  const fb = $('#formFeedback');
-  fb.textContent = msg;
-  fb.className = 'form-feedback ' + type;
-  clearTimeout(fb._t);
-  fb._t = setTimeout(() => { fb.textContent=''; fb.className='form-feedback'; }, ms);
-}
-document.addEventListener('keydown', e => {
-  if (e.altKey && e.key === 'i') { e.preventDefault(); document.getElementById('btnInfo').click(); }
-  if (e.altKey && e.key === 's') { e.preventDefault(); document.getElementById('btnSettings').click(); }
-  if (e.altKey && e.key === 'h') { e.preventDefault(); document.getElementById('btnHelp').click(); }
-  if (e.key === 'Escape' && document.getElementById('memberForm').contains(document.activeElement)) {
-    document.getElementById('reset').click();
-  }
-});
-$('#memberForm').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'submit') {
-    e.preventDefault(); $('#memberForm').requestSubmit();
-  }
-});
+/* Pagination, theme toggle, keyboard shortcuts and the feedback toast are all
+   wired by common.js (initPagination/initTheme/initShortcuts/feedback via
+   initCommonChrome). */
 
 /* =========================
    Init
@@ -1368,5 +1163,9 @@ $('#grade').value = settings.defaultGrade;
 showShape($('#section').value);
 updateFwModes();
 updatePreview();
-initPagination();
+initCommonChrome({
+  formSelector: '#memberForm',
+  pageSizes: [25, 50, 100, 0],
+  theme: { light: { icon: '🧱', label: 'Rust' }, dark: { icon: '🏗️', label: 'Steel' } },
+});
 render();
