@@ -93,9 +93,10 @@ const CL = {
   custom:  ({items,dia}) => {
     let t=0;
     for(const it of items){
-      if(it.type==='leg')  t += Number(it.len||0);
-      if(it.type==='bend'){ t -= bendDeduction(it.angle,dia); if(it.hook) t += hookLength(it.angle,dia); }
-      if(it.type==='hook') t += hookLength(it.angle,dia);
+      const n = Number(it.num) || 1;
+      if(it.type==='leg')  t += n * Number(it.len||0);
+      if(it.type==='bend'){ t -= n * bendDeduction(it.angle,dia); }
+      if(it.type==='hook') t += n * hookLength(it.angle,dia);
     }
     return t;
   }
@@ -147,10 +148,10 @@ const CLcalc = {
   custom:  ({items,dia}) => {
     let s='', v=0, first=true;
     for(const it of items){
-      if(it.type==='leg'){ const L=Number(it.len||0); v+=L; s+=(first?'':' + ')+fmtN(L); first=false; }
-      if(it.type==='bend'){ const d=bendDeduction(it.angle,dia); v-=d; s+=` ${MINUS} ${fmtN(d)}`;
-        if(it.hook){ const h=hookLength(it.angle,dia); v+=h; s+=` + ${fmtN(h)}`; } }
-      if(it.type==='hook'){ const h=hookLength(it.angle,dia); v+=h; s+=(first?'':' + ')+fmtN(h)+'(hook)'; first=false; }
+      const n = Number(it.num) || 1;
+      if(it.type==='leg'){ const L=Number(it.len||0); v+=n*L; s+=(first?'':' + ')+`${n} ${TIMES} ${fmtN(L)} (Leg)`; first=false; }
+      if(it.type==='bend'){ const d=bendDeduction(it.angle,dia); v-=n*d; s+=` ${MINUS} ${n} ${TIMES} ${fmtN(d)} (${it.angle}\u00B0 bend)`; }
+      if(it.type==='hook'){ const h=hookLength(it.angle,dia); v+=n*h; s+=(first?'':' + ')+`${n} ${TIMES} ${fmtN(h)} (${it.angle}\u00B0 hook)`; first=false; }
     }
     return `${s.trim()} = ${fmt0(v)}`;
   }
@@ -339,24 +340,28 @@ $('#S_type').addEventListener('change', () => {
 /* Custom builder */
 let customItems = [];
 function resetCustom(){ customItems=[]; $('#customList').innerHTML=''; }
-function addLeg(len=''){
-  const idx = customItems.push({type:'leg',len})-1;
+function addLeg(len='', num=1){
+  const idx = customItems.push({type:'leg',len,num})-1;
   const row = document.createElement('div');
   row.className='custom-item';
   row.innerHTML = `
-    <span class="pill">Leg ${customItems.filter(x=>x.type==='leg').length}</span>
+    <span class="pill">Legs</span>
+    <input type="number" min="1" step="1" value="${num}" placeholder="#" data-kind="leg-num" data-idx="${idx}" class="ci-num" />
+    <span class="ci-unit">×</span>
     <input type="number" min="1" step="1" value="${len}" placeholder="Length" data-kind="leg" data-idx="${idx}" />
     <span class="ci-unit">mm</span>
     <button type="button" class="btn small ghost" data-remove="${idx}">✕</button>
   `;
   $('#customList').appendChild(row);
 }
-function addBend(angle=90, hook=false){
-  const idx = customItems.push({type:'bend',angle,hook})-1;
+function addBend(angle=90, num=1){
+  const idx = customItems.push({type:'bend',angle,num})-1;
   const row = document.createElement('div');
   row.className='custom-item';
   row.innerHTML = `
-    <span class="pill">Bend</span>
+    <span class="pill">Bends</span>
+    <input type="number" min="1" step="1" value="${num}" placeholder="#" data-kind="bend-num" data-idx="${idx}" class="ci-num" />
+    <span class="ci-unit">×</span>
     <span class="ci-unit">Angle</span>
     <select data-kind="bend-angle" data-idx="${idx}">
       <option value="45" ${angle==45?'selected':''}>45°</option>
@@ -364,19 +369,18 @@ function addBend(angle=90, hook=false){
       <option value="135" ${angle==135?'selected':''}>135°</option>
       <option value="180" ${angle==180?'selected':''}>180°</option>
     </select>
-    <label class="ci-chk">
-      <input type="checkbox" data-kind="hook" data-idx="${idx}" ${hook?'checked':''}> Hook
-    </label>
     <button type="button" class="btn small ghost" data-remove="${idx}">✕</button>
   `;
   $('#customList').appendChild(row);
 }
-function addHook(angle=180){
-  const idx = customItems.push({type:'hook',angle})-1;
+function addHook(angle=180, num=1){
+  const idx = customItems.push({type:'hook',angle,num})-1;
   const row = document.createElement('div');
   row.className='custom-item';
   row.innerHTML = `
-    <span class="pill">Hook</span>
+    <span class="pill">Hooks</span>
+    <input type="number" min="1" step="1" value="${num}" placeholder="#" data-kind="hook-num" data-idx="${idx}" class="ci-num" />
+    <span class="ci-unit">×</span>
     <span class="ci-unit">Angle</span>
     <select data-kind="hook-angle" data-idx="${idx}">
       <option value="90" ${angle==90?'selected':''}>90°</option>
@@ -393,9 +397,11 @@ $('#addHook').addEventListener('click',()=>{ addHook(); updateCustomPreview(); }
 $('#customList').addEventListener('change', e=>{
   const el = e.target, idx = Number(el.dataset.idx);
   if(el.dataset.kind==='leg')        customItems[idx].len   = el.value;
+  if(el.dataset.kind==='leg-num')    customItems[idx].num   = Number(el.value) || 1;
   if(el.dataset.kind==='bend-angle') customItems[idx].angle = Number(el.value);
+  if(el.dataset.kind==='bend-num')   customItems[idx].num   = Number(el.value) || 1;
   if(el.dataset.kind==='hook-angle') customItems[idx].angle = Number(el.value);
-  if(el.dataset.kind==='hook')       customItems[idx].hook  = el.checked;
+  if(el.dataset.kind==='hook-num')   customItems[idx].num   = Number(el.value) || 1;
   updateCustomPreview();
 });
 $('#customList').addEventListener('click', e=>{
@@ -700,9 +706,9 @@ function loadRow(i) {
     resetCustom()
     $('#customCalc').value = inp.calc||inp.name||''
     for (const it of (inp.items||[])) {
-      if (it.type === 'leg') addLeg(it.len);
-      else if (it.type === 'bend') addBend(it.angle, it.hook);
-      else if (it.type === 'hook') addHook(it.angle);
+      if (it.type === 'leg') addLeg(it.len, it.num);
+      else if (it.type === 'bend') addBend(it.angle, it.num);
+      else if (it.type === 'hook') addHook(it.angle, it.num);
     }
     updateCustomPreview()
   }
