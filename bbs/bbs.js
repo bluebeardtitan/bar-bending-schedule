@@ -150,8 +150,8 @@ const CLcalc = {
     for(const it of items){
       const n = Number(it.num) || 1;
       if(it.type==='leg'){ const L=Number(it.len||0); v+=n*L; s+=(first?'':' + ')+`${n} ${TIMES} ${fmtN(L)} (Leg)`; first=false; }
-      if(it.type==='bend'){ const d=bendDeduction(it.angle,dia); v-=n*d; s+=` ${MINUS} ${n} ${TIMES} ${fmtN(d)} (${it.angle}\u00B0 bend)`; }
-      if(it.type==='hook'){ const h=hookLength(it.angle,dia); v+=n*h; s+=(first?'':' + ')+`${n} ${TIMES} ${fmtN(h)} (${it.angle}\u00B0 hook)`; first=false; }
+      if(it.type==='bend'){ const d=bendDeduction(it.angle,dia); v-=n*d; s+=` ${MINUS} ${n} ${TIMES} ${fmtN(d)} (bend deduction)`; }
+      if(it.type==='hook'){ const h=hookLength(it.angle,dia); v+=n*h; s+=(first?'':' + ')+`${n} ${TIMES} ${fmtN(h)} (${it.angle}\u00B0 hook allowance)`; first=false; }
     }
     return `${s.trim()} = ${fmt0(v)}`;
   }
