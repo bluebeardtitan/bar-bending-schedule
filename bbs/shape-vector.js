@@ -73,7 +73,7 @@
         }
       }
     }
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${num(vx)} ${num(vy)} ${num(vw)} ${num(vh)}" width="${num(vw)}" height="${num(vh)}">${parts.join('')}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${num(vx)} ${num(vy)} ${num(vw)} ${num(vh)}" width="${num(vw)}" height="${num(vh)}" preserveAspectRatio="xMidYMid meet">${parts.join('')}</svg>`;
   }
 
   function escapeXML(s) {

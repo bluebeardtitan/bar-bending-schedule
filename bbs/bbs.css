@@ -160,6 +160,7 @@ a.nav-link:hover{
 /* ---- Sketch row ---- */
 .sketch-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .sketch-row button{width:auto}
+#shapePreview{display:block;object-fit:contain;width:80px;height:40px;padding:2px;background:var(--input-bg);border-radius:6px;flex-shrink:0}
 
 /* ---- Chips / pills / badges ---- */
 .chip{
@@ -273,6 +274,7 @@ tfoot td{border-top:2px solid var(--border);font-weight:700}
 [data-theme="light"] thead th{background:#fdecd8}
 [data-theme="light"] tbody tr:hover{background:rgba(192,82,42,.04)}
 [data-theme="light"] #shapePreview{background:#fdf6ee!important}
+[data-theme="dark"] #shapePreview{background:var(--input-bg)}
 [data-theme="light"] .btn.primary{color:#fff}
 
 /* =========================================
