@@ -20,9 +20,26 @@ function closeToolbarMenus(except) {
   document.querySelectorAll('.toolbar-menu.open').forEach(m => {
     if (m === except) return;
     m.classList.remove('open');
+    m.style.left = m.style.right = '';
     const trigger = document.querySelector(`.menu-trigger[aria-controls="${m.id}"]`);
     if (trigger) trigger.setAttribute('aria-expanded', 'false');
   });
+}
+
+/* Keep an open dropdown inside the viewport. The menu is absolutely positioned
+   within its .menu-wrap; on mobile the toolbar wraps and a default right:0 menu
+   can spill past a screen edge, so we measure and clamp its horizontal offset. */
+function positionToolbarMenu(trigger, menu) {
+  menu.style.left = menu.style.right = '';
+  const pad = 8;
+  const vw = document.documentElement.clientWidth;
+  const wrap = trigger.parentElement.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  let leftVp = wrap.right - mw;                       // default: right-aligned to the trigger
+  if (leftVp + mw > vw - pad) leftVp = vw - pad - mw; // don't run off the right
+  if (leftVp < pad) leftVp = pad;                     // …nor off the left
+  menu.style.right = 'auto';
+  menu.style.left = (leftVp - wrap.left) + 'px';      // offset is relative to the wrap
 }
 
 /* Wire the shared Export / Import dropdown menus. The action items keep the
@@ -39,7 +56,10 @@ function initToolbarMenus() {
       const willOpen = !menu.classList.contains('open');
       closeToolbarMenus();
       closeOptionsMenus();
-      menu.classList.toggle('open', willOpen);
+      if (willOpen) {
+        menu.classList.add('open');
+        positionToolbarMenu(trigger, menu);
+      }
       trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
     });
     // Close after picking an action, but keep open when toggling the PDF switch.
@@ -52,6 +72,12 @@ function initToolbarMenus() {
     if (!e.target.closest('.toolbar-menu') && !e.target.closest('.menu-trigger')) closeToolbarMenus();
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeToolbarMenus(); });
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.toolbar-menu.open').forEach(m => {
+      const trigger = document.querySelector(`.menu-trigger[aria-controls="${m.id}"]`);
+      if (trigger) positionToolbarMenu(trigger, m);
+    });
+  });
 }
 
 function buildExportJSON(data) {
