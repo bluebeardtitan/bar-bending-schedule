@@ -462,6 +462,38 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
   .toolbar-menu.open > *{animation:none}
 }
 
+/* ---- Mobile: dropdown becomes a docked bottom sheet ----
+   An absolute 214px menu anchored to a wrapping toolbar overflows narrow
+   viewports, so below 600px each menu slides up from the bottom edge as a
+   full-width sheet with a dimmed backdrop and finger-sized targets. */
+@media (max-width:600px){
+  .toolbar-menu{
+    position:fixed;left:10px;right:10px;bottom:10px;top:auto;
+    width:auto;min-width:0;max-width:none;
+    max-height:70vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    z-index:1200;padding:8px 8px 12px;border-radius:18px;
+    transform-origin:bottom center;transform:translateY(24px) scale(.98);
+    box-shadow:0 -10px 50px -8px rgba(0,0,0,.65),0 2px 10px rgba(0,0,0,.4);
+  }
+  .toolbar-menu::before{left:auto;right:auto;top:auto;width:40px;height:4px;
+    margin:2px auto 6px;position:relative;display:block;opacity:.6}
+  /* dimmed backdrop behind the open sheet (taps through to close) */
+  .menu-wrap:has(.toolbar-menu.open)::before{
+    content:"";position:fixed;inset:0;z-index:1190;
+    background:rgba(0,0,0,.5);backdrop-filter:blur(2px);
+    animation:tmBackdrop .2s both;
+  }
+  .tm-label{padding:8px 12px 6px;font-size:11px}
+  .toolbar-menu .options-item{padding:13px 12px;font-size:14px;gap:12px}
+  .toolbar-menu .options-item .oi-ico{font-size:16px;width:22px}
+  .toolbar-menu .toggle-item .oi-check{width:40px;height:22px}
+  .toolbar-menu .toggle-item .oi-check::after{width:18px;height:18px}
+  .toolbar-menu .toggle-item .oi-check:checked::after{transform:translateX(18px)}
+  .toolbar-menu.open > *{animation-name:tmSheetItemIn}
+}
+@keyframes tmSheetItemIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes tmBackdrop{from{opacity:0}to{opacity:1}}
+
 /* keep dropdown chrome out of printed output */
 @media print{.menu-wrap{display:none!important}}
 
