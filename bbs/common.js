@@ -15,6 +15,45 @@ function closeOptionsMenus() {
   document.querySelectorAll('.options-menu.open').forEach(m => m.classList.remove('open'));
 }
 
+/* Close the toolbar Export/Import dropdowns (optionally keep one open). */
+function closeToolbarMenus(except) {
+  document.querySelectorAll('.toolbar-menu.open').forEach(m => {
+    if (m === except) return;
+    m.classList.remove('open');
+    const trigger = document.querySelector(`.menu-trigger[aria-controls="${m.id}"]`);
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+/* Wire the shared Export / Import dropdown menus. The action items keep the
+   original ids (#exportCSV, #saveJSON, #printBBS, #importCSV, #loadJSON) so each
+   page's existing click handlers stay attached — we only add open/close. */
+function initToolbarMenus() {
+  const triggers = document.querySelectorAll('.menu-trigger');
+  if (!triggers.length) return;
+  triggers.forEach(trigger => {
+    const menu = document.getElementById(trigger.getAttribute('aria-controls'));
+    if (!menu) return;
+    trigger.addEventListener('click', e => {
+      e.stopPropagation();
+      const willOpen = !menu.classList.contains('open');
+      closeToolbarMenus();
+      closeOptionsMenus();
+      menu.classList.toggle('open', willOpen);
+      trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+    // Close after picking an action, but keep open when toggling the PDF switch.
+    menu.addEventListener('click', e => {
+      if (e.target.closest('.toggle-item') || e.target.closest('.keep-open')) return;
+      if (e.target.closest('.options-item')) closeToolbarMenus();
+    });
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.toolbar-menu') && !e.target.closest('.menu-trigger')) closeToolbarMenus();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeToolbarMenus(); });
+}
+
 function buildExportJSON(data) {
   const indent = (s, pad) => s.replace(/\n/g, '\n' + pad);
   const parts = [];
@@ -229,4 +268,5 @@ function initCommonChrome(opts) {
   initShortcuts(opts.formSelector || '#barForm');
   initDragReorder();
   initPagination(opts.pageSizes);
+  initToolbarMenus();
 }

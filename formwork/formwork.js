@@ -879,7 +879,7 @@ $('#printBBS').addEventListener('click', async () => {
   updatePrintMeta();
   const pdfTextured = !!($('#pdfTextured') && $('#pdfTextured').checked);
   const btn = $('#printBBS');
-  btn.disabled = true; btn.textContent = '⏳ Generating…';
+  btn.disabled = true; btn.innerHTML = '<span class="oi-ico">⏳</span><span class="oi-txt">Generating…</span>';
 
   try {
     if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF not loaded');
@@ -1145,7 +1145,9 @@ $('#printBBS').addEventListener('click', async () => {
     console.error('PDF export failed:', err);
     alert('PDF export failed. See console for details.');
   } finally {
-    btn.disabled = false; btn.textContent = '📄 Export PDF';
+    btn.disabled = false;
+    btn.innerHTML = '<span class="oi-ico">📄</span><span class="oi-txt">PDF Document</span><span class="oi-ext">.pdf</span>';
+    closeToolbarMenus();
   }
 });
 

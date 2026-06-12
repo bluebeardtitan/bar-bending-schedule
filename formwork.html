@@ -255,15 +255,40 @@
       <span class="pill" id="countBadge">0 items</span>
       <div class="space"></div>
       <input type="search" id="searchInput" placeholder="🔍 Search schedule…" style="width:170px;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text)" />
-      <button class="btn small" id="exportCSV" tabindex="40">⬇️ CSV</button>
-      <button class="btn small" id="importCSV" tabindex="40">⬆️ CSV Import</button>
-      <button class="btn small" id="saveJSON"  tabindex="41">💾 Save</button>
-      <button class="btn small" id="loadJSON"  tabindex="42">📂 Load</button>
-      <label id="pdfTexturedLabel" title="Draw the rebar/3D texture for any textured sketches in the PDF (vector — larger file). Off = clean lines (smallest)."
-        style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none">
-        <input type="checkbox" id="pdfTextured" style="width:auto;margin:0"> Textured
-      </label>
-      <button class="btn small warn"   id="printBBS" tabindex="43">📄 Export PDF</button>
+      <div class="menu-wrap">
+        <button type="button" class="btn small menu-trigger" id="exportMenuBtn" tabindex="40"
+          aria-haspopup="true" aria-expanded="false" aria-controls="exportMenu" title="Export the schedule">
+          <span class="mt-ico">⬇️</span> Export <span class="mt-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="toolbar-menu" id="exportMenu" role="menu" aria-label="Export schedule">
+          <div class="tm-label">Export as</div>
+          <button type="button" class="options-item" id="exportCSV" role="menuitem">
+            <span class="oi-ico">⬇️</span><span class="oi-txt">CSV Spreadsheet</span><span class="oi-ext">.csv</span></button>
+          <button type="button" class="options-item" id="saveJSON" role="menuitem">
+            <span class="oi-ico">💾</span><span class="oi-txt">Project File</span><span class="oi-ext">.json</span></button>
+          <div class="tm-sep"></div>
+          <button type="button" class="options-item keep-open" id="printBBS" role="menuitem">
+            <span class="oi-ico">📄</span><span class="oi-txt">PDF Document</span><span class="oi-ext">.pdf</span></button>
+          <label class="options-item toggle-item" id="pdfTexturedLabel"
+            title="Draw the rebar/3D texture for any textured sketches in the PDF (vector — larger file). Off = clean lines (smallest).">
+            <span class="oi-ico">🧬</span><span class="oi-txt">Textured sketches in PDF</span>
+            <input type="checkbox" id="pdfTextured" class="oi-check">
+          </label>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button type="button" class="btn small menu-trigger" id="importMenuBtn" tabindex="42"
+          aria-haspopup="true" aria-expanded="false" aria-controls="importMenu" title="Import a schedule">
+          <span class="mt-ico">⬆️</span> Import <span class="mt-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="toolbar-menu" id="importMenu" role="menu" aria-label="Import schedule">
+          <div class="tm-label">Import from</div>
+          <button type="button" class="options-item" id="importCSV" role="menuitem">
+            <span class="oi-ico">⬆️</span><span class="oi-txt">CSV Spreadsheet</span><span class="oi-ext">.csv</span></button>
+          <button type="button" class="options-item" id="loadJSON" role="menuitem">
+            <span class="oi-ico">📂</span><span class="oi-txt">Project File</span><span class="oi-ext">.json</span></button>
+        </div>
+      </div>
       <button class="btn small danger" id="clearAll"  tabindex="44">🗑️ Clear</button>
     </div>
 

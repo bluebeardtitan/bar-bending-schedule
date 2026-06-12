@@ -366,6 +366,106 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
 .options-item.danger:hover{background:rgba(248,113,113,.1)}
 
 /* =========================================
+   Toolbar Export / Import dropdown menus
+   ========================================= */
+.menu-wrap{position:relative;display:inline-flex}
+
+.menu-trigger{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--accent);font-weight:600;
+}
+.menu-trigger .mt-ico{font-size:13px;line-height:1}
+.menu-trigger .mt-caret{
+  font-size:10px;color:var(--muted);margin-left:1px;
+  transition:transform .2s cubic-bezier(.2,.8,.2,1),color .2s;
+}
+.menu-trigger:hover{border-color:var(--brand)}
+.menu-trigger[aria-expanded="true"]{
+  border-color:var(--brand);color:var(--brand);
+  box-shadow:0 0 0 3px rgba(224,123,57,.16);transform:none;
+}
+.menu-trigger[aria-expanded="true"] .mt-caret{transform:rotate(180deg);color:var(--brand)}
+
+.toolbar-menu{
+  position:absolute;right:0;top:calc(100% + 7px);z-index:120;
+  display:flex;flex-direction:column;gap:2px;
+  min-width:214px;padding:7px;
+  background:var(--panel);
+  border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 20px 46px -14px rgba(0,0,0,.6),0 2px 8px rgba(0,0,0,.3);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transform:translateY(-8px) scale(.96);transform-origin:top right;
+  transition:opacity .15s ease,transform .19s cubic-bezier(.2,.85,.25,1),visibility 0s linear .19s;
+}
+/* hairline accent on the top edge — blueprint detail */
+.toolbar-menu::before{
+  content:"";position:absolute;left:14px;right:14px;top:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--brand),transparent);
+  opacity:.5;border-radius:2px;
+}
+.toolbar-menu.open{
+  opacity:1;visibility:visible;pointer-events:auto;transform:none;
+  transition:opacity .15s ease,transform .19s cubic-bezier(.2,.85,.25,1),visibility 0s;
+}
+.tm-label{
+  font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);padding:5px 10px 4px;
+}
+.tm-sep{height:1px;background:var(--border);margin:4px 8px;opacity:.7}
+
+.toolbar-menu .options-item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:8px 10px;font-size:13px;border-radius:8px;
+  background:transparent;border:none;color:var(--text);
+  cursor:pointer;white-space:nowrap;text-align:left;
+}
+.toolbar-menu .options-item .oi-ico{width:20px;text-align:center;font-size:14px;flex-shrink:0}
+.toolbar-menu .options-item .oi-txt{flex:1}
+.toolbar-menu .options-item .oi-ext{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:10px;font-weight:600;letter-spacing:.04em;
+  color:var(--muted);background:var(--chip);
+  border:1px solid var(--border);border-radius:5px;
+  padding:1px 6px;flex-shrink:0;transition:border-color .15s,color .15s;
+}
+.toolbar-menu .options-item:hover{background:var(--accent)}
+.toolbar-menu .options-item:hover .oi-ext{border-color:var(--brand);color:var(--brand)}
+.toolbar-menu .options-item:focus-visible{outline:none;background:var(--accent);box-shadow:inset 0 0 0 1px var(--brand)}
+
+/* textured-PDF toggle row */
+.toolbar-menu .toggle-item{cursor:pointer;user-select:none}
+.toolbar-menu .toggle-item .oi-check{
+  width:34px;height:18px;flex-shrink:0;margin:0;padding:0;
+  appearance:none;-webkit-appearance:none;
+  background:var(--chip);border:1px solid var(--border);border-radius:999px;
+  position:relative;cursor:pointer;transition:background .18s,border-color .18s;
+}
+.toolbar-menu .toggle-item .oi-check::after{
+  content:"";position:absolute;top:1px;left:1px;width:14px;height:14px;border-radius:50%;
+  background:var(--muted);transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s;
+}
+.toolbar-menu .toggle-item .oi-check:checked{background:rgba(224,123,57,.25);border-color:var(--brand)}
+.toolbar-menu .toggle-item .oi-check:checked::after{transform:translateX(16px);background:var(--brand)}
+
+/* staggered reveal of items on open */
+.toolbar-menu.open > *{animation:tmItemIn .26s both}
+.toolbar-menu.open > :nth-child(1){animation-delay:.02s}
+.toolbar-menu.open > :nth-child(2){animation-delay:.05s}
+.toolbar-menu.open > :nth-child(3){animation-delay:.08s}
+.toolbar-menu.open > :nth-child(4){animation-delay:.11s}
+.toolbar-menu.open > :nth-child(5){animation-delay:.14s}
+.toolbar-menu.open > :nth-child(6){animation-delay:.17s}
+@keyframes tmItemIn{from{opacity:0;transform:translateX(7px)}to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){
+  .toolbar-menu,.menu-trigger .mt-caret{transition-duration:.001s}
+  .toolbar-menu.open > *{animation:none}
+}
+
+/* keep dropdown chrome out of printed output */
+@media print{.menu-wrap{display:none!important}}
+
+/* =========================================
    Print
    ========================================= */
 @media print {
