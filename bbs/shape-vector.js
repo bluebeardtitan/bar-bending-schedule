@@ -90,6 +90,11 @@
      Draws the model into `pdf` fitted inside the box (X,Y,W,H) in mm,
      preserving aspect ratio and centring. */
   const MM_PER_PT = 0.352777778;
+  // Enlarge sketch labels in the PDF relative to their on-canvas size. Sketches
+  // are fitted small on the page, so the proportionally-scaled font can come out
+  // too faint to read in print; this boosts legibility. The white knockout box
+  // behind each label has padding, so a modest factor stays inside it.
+  const TEXT_PT_BOOST = 2.0;
 
   function toPdf(pdf, model, X, Y, W, H) {
     if (!model || !model.vb || !model.el) return;
@@ -169,7 +174,7 @@
           // on heavily-fitted sketches — the clamped text overflows its box and
           // looks off-centre/"pushed around". Keep only a tiny floor so the size
           // never hits 0.
-          const pt = Math.max(0.5, (e.sz || 11) * scale / MM_PER_PT);
+          const pt = Math.max(0.5, (e.sz || 11) * scale / MM_PER_PT) * TEXT_PT_BOOST;
           pdf.setFontSize(pt);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(r, g, b);
