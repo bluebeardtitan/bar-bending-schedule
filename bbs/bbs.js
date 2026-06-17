@@ -206,6 +206,7 @@ let rows = JSON.parse(localStorage.getItem('bbs_rows')||'[]');
 let editIndex = -1;
 let currentPage = (parseInt(localStorage.getItem('bbs_page')) || 1)
 let navPersistTimer = null
+let submitBtnTimer = null
 let lastEditedIndex = -1
 let searchTerm = ''
 const DEFAULT_PAGE_SIZE = 25
@@ -535,7 +536,9 @@ $('#barForm').addEventListener('submit', e=>{
     submitBtn.textContent = verb === 'Added' ? '✅ Added!' : '✅ Updated!';
     submitBtn.classList.add('active');
     submitBtn.disabled = true;
-    setTimeout(() => {
+    if (submitBtnTimer) { clearTimeout(submitBtnTimer); submitBtnTimer = null }
+    submitBtnTimer = setTimeout(() => {
+      submitBtnTimer = null
       submitBtn.textContent = '➕ Add to Schedule';
       submitBtn.classList.remove('active');
       submitBtn.disabled = false;
@@ -661,8 +664,13 @@ function loadRow(i) {
   if (!r) return
   editIndex = i
   if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
+  if (submitBtnTimer) { clearTimeout(submitBtnTimer); submitBtnTimer = null }
   const submitBtn = document.querySelector('.submit-btn')
-  if (submitBtn) submitBtn.textContent = '✏️ Update Schedule'
+  if (submitBtn) {
+    submitBtn.textContent = '✏️ Update Schedule'
+    submitBtn.classList.remove('active')
+    submitBtn.disabled = false
+  }
   const inp = r.inputs || {}
   $('#member').value = r.member
   $('#mark').value   = r.mark||''

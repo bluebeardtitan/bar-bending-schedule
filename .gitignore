@@ -1,2 +1,4 @@
-serve*.py
+server.py
 AGENTS.md
+CLAUDE.md
+cln_server.py
