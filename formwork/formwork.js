@@ -1054,6 +1054,17 @@ $('#printBBS').addEventListener('click', async () => {
       let model = null;
       if (pdfTextured && r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildTexturedModel) {
         try { model = ShapeDrawer.buildTexturedModel(r.shapeHist); } catch {}
+        if (model && model.el && r.shapeVec && r.shapeVec.el) {
+          for (const oe of r.shapeVec.el) {
+            if (oe.k !== 'text' || !oe.sz) continue;
+            for (const ne of model.el) {
+              if (ne.k === 'text' && ne.t === oe.t &&
+                  Math.abs(ne.x - oe.x) < 2 && Math.abs(ne.y - oe.y) < 2) {
+                ne.sz = oe.sz; break;
+              }
+            }
+          }
+        }
       }
       if (!model && r.shapeVec && r.shapeVec.vb) model = r.shapeVec;
 
