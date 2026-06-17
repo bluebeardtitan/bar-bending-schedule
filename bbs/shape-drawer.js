@@ -2652,7 +2652,7 @@ function _labelEls(mx, my, label, angle, size, pos) {
   const corner = (lx, ly) => [lx0 + lx*c - ly*s, ly0 + lx*s + ly*c];
   return [
     { k:'fill', col:'#fff', d:[corner(-tw/2,-bh), corner(tw/2,-bh), corner(tw/2,bh), corner(-tw/2,bh)] },
-    { k:'text', x:lx0, y:ly0, t:label, sz:fs, ang:rot, col:DIM_GRAY, anchor:'c' },
+    { k:'text', x:lx0, y:ly0, t:label, sz: Math.round(fs / 1.333), ang:rot, col:DIM_GRAY, anchor:'c' },
   ];
 }
 
@@ -2709,7 +2709,7 @@ function _emitLeader(out, origin, elbow, textPt, label, size) {
   const tx = textPt ? textPt.x : elbow.x+20, ty = textPt ? textPt.y : elbow.y;
   const tw = lbl.length*fs*0.6 + fs*0.7;
   out.push({ k:'fill', col:'#fff', d:[[tx+2,ty-bh],[tx+2+tw,ty-bh],[tx+2+tw,ty+bh],[tx+2,ty+bh]] });
-  out.push({ k:'text', x:tx+6, y:ty, t:lbl, sz:fs, col:DIM_GRAY, anchor:'l' });
+  out.push({ k:'text', x:tx+6, y:ty, t:lbl, sz: Math.round(fs / 1.333), col:DIM_GRAY, anchor:'l' });
   out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[tx+2, ty+bh], b:[tx+2+tw, ty+bh] });
 }
 
@@ -2752,7 +2752,7 @@ function buildVectorModel() {
     } else if (cmd.type === 'circle') {
       el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
     } else if (cmd.type === 'text') {
-      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz:cmd.size||13, col:DIM_GRAY, anchor:'l' });
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz: Math.round((cmd.size||13) / 1.333), col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
       _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
@@ -2877,7 +2877,7 @@ function buildTexturedModel(hist) {
       const closed = cmd.type==='rect' ? true : !!cmd.closed;
       _emitTexturedBar(el, samples, d, cmd.style || activeStyle, closed);
     } else if (cmd.type === 'text') {
-      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz:cmd.size||13, col:'#555', anchor:'l' });
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz: Math.round((cmd.size||13) / 1.333), col:'#555', anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
       _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
