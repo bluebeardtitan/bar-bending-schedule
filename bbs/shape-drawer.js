@@ -792,7 +792,7 @@ function drawDimAligned(ctx, p1, p2, offset, label, size, pos) {
 /* ── 2. ANGULAR dimension — angle at a vertex between two arms ──
    Clicks: vertex, arm-A end, arm-B end.
    Renders: arc + two radial lines from vertex + angle label. */
-function drawDimAngular(ctx, vertex, ptA, ptB, label, size) {
+function drawDimAngular(ctx, vertex, ptA, ptB, label, size, pos) {
   const rA = Math.hypot(ptA.x-vertex.x, ptA.y-vertex.y);
   const rB = Math.hypot(ptB.x-vertex.x, ptB.y-vertex.y);
   const r  = Math.min(rA, rB, 60) * 0.72 + 20;  // arc radius
@@ -838,7 +838,7 @@ function drawDimAngular(ctx, vertex, ptA, ptB, label, size) {
 
   // Label at arc midpoint
   const aMid = aA + sweep/2;
-  _dimLabel(ctx, vertex.x + Math.cos(aMid)*(r+18), vertex.y + Math.sin(aMid)*(r+18), lbl, aMid + Math.PI/2, size);
+  _dimLabel(ctx, vertex.x + Math.cos(aMid)*r, vertex.y + Math.sin(aMid)*r, lbl, aMid + Math.PI/2, size, pos || 'on');
 
   // Vertex dot
   ctx.beginPath(); ctx.arc(vertex.x, vertex.y, 3, 0, Math.PI*2); ctx.fill();
@@ -849,7 +849,7 @@ function drawDimAngular(ctx, vertex, ptA, ptB, label, size) {
 /* ── 3. LEADER dimension — annotated leader line ──
    Clicks: origin (arrowhead tip), elbow point, (optional) text anchor.
    Two-segment kinked line ending in a short horizontal text shelf. */
-function drawDimLeader(ctx, origin, elbow, textPt, label, size) {
+function drawDimLeader(ctx, origin, elbow, textPt, label, size, pos) {
   const lbl = label || 'Label';
   const fs  = size || DIM_BASE;
 
@@ -883,16 +883,24 @@ function drawDimLeader(ctx, origin, elbow, textPt, label, size) {
   const tx = textPt ? textPt.x : elbow.x + 20;
   const ty = textPt ? textPt.y : elbow.y;
   const bh = fs*0.82;   // half background-box height
+  const sgn = pos === 'above' ? 1 : pos === 'below' ? -1 : 0;
+  const ety = ty - sgn * (bh + 2);  // 'above' shifts up, 'below' shifts down
   ctx.font = `bold ${fs}px ui-monospace,Consolas,monospace`;
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   const tw = ctx.measureText(lbl).width + fs*0.7;
-  ctx.fillStyle = '#fff'; ctx.fillRect(tx + 2, ty - bh, tw, bh*2);
-  ctx.fillStyle = GRAY.dim; ctx.fillText(lbl, tx + 6, ty);
+  ctx.fillStyle = '#fff'; ctx.fillRect(tx + 2, ety - bh, tw, bh*2);
+  ctx.fillStyle = GRAY.dim; ctx.fillText(lbl, tx + 6, ety);
 
-  // Underline shelf
-  ctx.beginPath();
-  ctx.moveTo(tx + 2, ty + bh); ctx.lineTo(tx + 2 + tw, ty + bh);
-  ctx.stroke();
+  // Shelf line: above=underline below label, on=none, below=aboveline above label
+  if (pos === 'below') {
+    ctx.beginPath();
+    ctx.moveTo(tx + 2, ety - bh); ctx.lineTo(tx + 2 + tw, ety - bh);
+    ctx.stroke();
+  } else if (pos !== 'on') {
+    ctx.beginPath();
+    ctx.moveTo(tx + 2, ety + bh); ctx.lineTo(tx + 2 + tw, ety + bh);
+    ctx.stroke();
+  }
 
   ctx.restore();
 }
@@ -1501,7 +1509,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
       }, listening: false,
     }));
 
@@ -1509,7 +1517,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot(), cmd.size);
+        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot(), cmd.size, cmd.pos);
       }, listening: false,
     }));
 
@@ -1612,7 +1620,7 @@ function renderGhostFrame(cursorPt) {
     if (ptB) {
       layer.add(new Konva.Shape({
         opacity: 0.6,
-        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot(), getFontSize()); },
+        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot(), getFontSize(), getLabelPos()); },
         listening: false,
       }));
     } else {
@@ -1628,7 +1636,7 @@ function renderGhostFrame(cursorPt) {
     const textPt = dimPhase === 2 ? cursorPt : null;
     layer.add(new Konva.Shape({
       opacity: 0.6,
-      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot(), getFontSize()); },
+      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot(), getFontSize(), getLabelPos()); },
       listening: false,
     }));
     dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
@@ -1856,7 +1864,7 @@ function onDown(e) {
     dimPts.push(pt);
     if (dimPts.length === 3) {
       const [vertex,ptA,ptB] = dimPts;
-      history.push({type:'dim-angular', vertex, ptA, ptB, label:getAnnot(), size:getFontSize()});
+      history.push({type:'dim-angular', vertex, ptA, ptB, label:getAnnot(), size:getFontSize(), pos:getLabelPos()});
       dimPhase=0; dimPts=[]; redraw();
     } else {
       dimPhase = dimPts.length;
@@ -1869,7 +1877,7 @@ function onDown(e) {
     dimPts.push(pt);
     if (dimPts.length === 3) {
       const [origin,elbow,textPt] = dimPts;
-      history.push({type:'dim-leader', origin, elbow, textPt, label:getAnnot(), size:getFontSize()});
+      history.push({type:'dim-leader', origin, elbow, textPt, label:getAnnot(), size:getFontSize(), pos:getLabelPos()});
       dimPhase=0; dimPts=[]; redraw();
     } else {
       dimPhase = dimPts.length;
@@ -2703,7 +2711,7 @@ function _emitAligned(out, p1, p2, offset, label, size, pos) {
   if (label) _labelEls((d1.x+d2.x)/2, (d1.y+d2.y)/2, label, Math.atan2(dy, dx), size, pos || 'above').forEach(e => out.push(e));
 }
 
-function _emitAngular(out, vertex, ptA, ptB, label, size) {
+function _emitAngular(out, vertex, ptA, ptB, label, size, pos) {
   const rA = Math.hypot(ptA.x-vertex.x, ptA.y-vertex.y);
   const rB = Math.hypot(ptB.x-vertex.x, ptB.y-vertex.y);
   const r = Math.min(rA, rB, 60) * 0.72 + 20;
@@ -2722,21 +2730,27 @@ function _emitAngular(out, vertex, ptA, ptB, label, size) {
   const arrowAng = aEnd + (sweep > 0 ? Math.PI/2 : -Math.PI/2);
   out.push(_arrowPoly(vertex.x+Math.cos(aEnd)*r, vertex.y+Math.sin(aEnd)*r, Math.cos(arrowAng), Math.sin(arrowAng), 1, size));
   const aMid = aA + sweep/2;
-  _labelEls(vertex.x+Math.cos(aMid)*(r+18), vertex.y+Math.sin(aMid)*(r+18), lbl, aMid+Math.PI/2, size).forEach(e => out.push(e));
+  _labelEls(vertex.x+Math.cos(aMid)*r, vertex.y+Math.sin(aMid)*r, lbl, aMid+Math.PI/2, size, pos || 'on').forEach(e => out.push(e));
   out.push(_dotPoly(vertex.x, vertex.y, 3));
 }
 
-function _emitLeader(out, origin, elbow, textPt, label, size) {
+function _emitLeader(out, origin, elbow, textPt, label, size, pos) {
   const lbl = label || 'Label', fs = size || DIM_BASE, bh = fs*0.82;
   out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[origin.x, origin.y], b:[elbow.x, elbow.y] });
   if (textPt) out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[elbow.x, elbow.y], b:[textPt.x, textPt.y] });
   const dx = elbow.x-origin.x, dy = elbow.y-origin.y, len = Math.hypot(dx, dy);
   if (len > 4) out.push(_arrowPoly(origin.x, origin.y, dx/len, dy/len, -1, size));
   const tx = textPt ? textPt.x : elbow.x+20, ty = textPt ? textPt.y : elbow.y;
+  const sgn = pos === 'above' ? 1 : pos === 'below' ? -1 : 0;
+  const ety = ty - sgn * (bh + 2);
   const tw = lbl.length*fs*0.6 + fs*0.7;
-  out.push({ k:'fill', col:'#fff', d:[[tx+2,ty-bh],[tx+2+tw,ty-bh],[tx+2+tw,ty+bh],[tx+2,ty+bh]] });
-  out.push({ k:'text', x:tx+6, y:ty, t:lbl, sz: Math.round(fs / PX_PER_PT), col:DIM_GRAY, anchor:'l' });
-  out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[tx+2, ty+bh], b:[tx+2+tw, ty+bh] });
+  out.push({ k:'fill', col:'#fff', d:[[tx+2,ety-bh],[tx+2+tw,ety-bh],[tx+2+tw,ety+bh],[tx+2,ety+bh]] });
+  out.push({ k:'text', x:tx+6, y:ety, t:lbl, sz: Math.round(fs / PX_PER_PT), col:DIM_GRAY, anchor:'l' });
+  if (pos === 'below') {
+    out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[tx+2, ety-bh], b:[tx+2+tw, ety-bh] });
+  } else if (pos !== 'on') {
+    out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[tx+2, ety+bh], b:[tx+2+tw, ety+bh] });
+  }
 }
 
 function buildVectorModel() {
@@ -2785,9 +2799,9 @@ function buildVectorModel() {
     } else if (cmd.type === 'dim-aligned') {
       _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size);
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size, cmd.pos);
     }
   }
   if (!el.length) return null;
@@ -2910,9 +2924,9 @@ function buildTexturedModel(hist) {
     } else if (cmd.type === 'dim-aligned') {
       _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size);
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size, cmd.pos);
     }
   }
   if (!el.length) return null;
@@ -2967,9 +2981,9 @@ function buildVectorModelFrom(hist) {
     } else if (cmd.type === 'dim-aligned') {
       _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
     } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size);
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size, cmd.pos);
     }
   }
   if (!el.length) return null;

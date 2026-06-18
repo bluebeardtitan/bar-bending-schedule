@@ -322,8 +322,18 @@ function initCommonChrome(opts) {
       if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
         // shapeHist is the source of truth — always rederive shapeVec from it.
         // Edit shapeHist entries (size, label, etc.) in the JSON to change output.
+        const oldVec = r.shapeVec;
         const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
-        if (fresh) { r.shapeVec = fresh; n++; }
+        if (fresh) {
+          // Preserve manually-edited sz values so JSON-level sz edits in shapeVec
+          // survive regen (e.g. user set sz:18 but size:18px computes to sz:14).
+          if (oldVec && oldVec.el && fresh.el) {
+            const oldTexts = oldVec.el.filter(e => e.k === 'text' && e.sz);
+            const newTexts = fresh.el.filter(e => e.k === 'text');
+            oldTexts.forEach((oe, i) => { if (newTexts[i]) newTexts[i].sz = oe.sz; });
+          }
+          r.shapeVec = fresh; n++;
+        }
       } else if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
         // No history available — at least fix an oversized viewBox in place.
         r.shapeVec = ShapeVector.tightenViewBox(r.shapeVec); n++;

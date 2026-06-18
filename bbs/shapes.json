@@ -34,18 +34,25 @@
       "id": "straight", "label": "Straight", "group": "quick",
       "segments": [
         { "pts": [[0,0.5],[1,0.5]], "style": "straight" }
-      ],
-      "dims": [
-        { "from": [0,0.5], "to": [1,0.5], "label": "A", "off": [0,-24] }
       ]
     },
 	{
-      "id": "straight-sc-hooks", "label": "Straight w/semi-circular hooks",
+      "id": "straight-sc-1hook", "label": "Straight w/Single semi-circular hook",
+      "group": "quick",
+      "segments": [ { "pts": [[0.08,0.532],[0.92,0.532],[0.92,0.475],[0.881,0.475]], "style": "bend" } ]
+    },
+	{
+      "id": "straight-sc-2hooks", "label": "Straight w/Double semi-circular hooks",
       "group": "quick",
       "segments": [ { "pts": [[0.125,0.468],[0.08,0.468],[0.08,0.532],[0.92,0.532],[0.92,0.475],[0.881,0.475]], "style": "bend" } ]
     },
 	{
-      "id": "straight-L-hooks", "label": "Straight w/L hooks",
+      "id": "straight-L-1hook", "label": "Straight w/Single L-hook",
+      "group": "quick",
+      "segments": [ { "pts": [[0.08,0.571],[0.92,0.571],[0.92,0.429]], "style": "bend" } ]
+    },
+    {
+      "id": "straight-L-2hooks", "label": "Straight w/Double L-hooks",
       "group": "quick",
       "segments": [ { "pts": [[0.08,0.44],[0.08,0.571],[0.92,0.571],[0.92,0.429]], "style": "bend" } ]
     },
@@ -95,11 +102,6 @@
         { "pts": [[0,90,0],[200,90,0]], "style": "straight" },
         { "pts": [[0,90,0],[0,0,0],[0,0,64],[0,28,64]], "style": "bend" },
         { "pts": [[200,90,0],[200,0,0],[200,0,-64],[200,28,-64]], "style": "bend" }
-      ],
-      "dims": [
-        { "iso": true, "from": [0,90,0],  "to": [200,90,0], "label": "A", "off": [0,-16] },
-        { "iso": true, "from": [0,90,0],  "to": [0,0,0],    "label": "B", "off": [-16,0] },
-        { "iso": true, "from": [0,0,0],   "to": [0,0,64],   "label": "C", "off": [0,16] }
       ]
     }
   ]

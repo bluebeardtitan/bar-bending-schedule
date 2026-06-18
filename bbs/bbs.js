@@ -1087,8 +1087,8 @@ $('#printBBS').addEventListener('click', async () => {
     cols.forEach(c => { c.w = c.w * usableW / wsum; c.x = xacc; xacc += c.w; });
     const col = k => cols.find(c => c.key === k);
 
-    pdf.setLineWidth(0.2);
-    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.15);
+    pdf.setDrawColor(180, 180, 180);
 
     // Place (possibly multi-line) text honouring a column's alignment
     const putText = (c, val, yTop) => {
@@ -1137,17 +1137,22 @@ $('#printBBS').addEventListener('click', async () => {
       y += 3;
     }
 
-    // ── Black table-header row (repeats on every page) ──
+    // ── Table-header row (repeats on every page) — light fill, dark text, no heavy ink ──
     function drawTableHead() {
       const hh = lineH * 2 + 2 * pad;
+      // Very light gray background — barely perceptible on screen, near-zero ink on print
+      pdf.setFillColor(242, 242, 242);
+      pdf.rect(margin, y, usableW, hh, 'F');
+      // Thick top rule (table open)
+      pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.5);
+      pdf.line(margin, y, margin + usableW, y);
+      // Thin vertical column separators in the header
+      pdf.setDrawColor(180, 180, 180); pdf.setLineWidth(0.1);
+      cols.slice(1).forEach(c => pdf.line(c.x, y, c.x, y + hh));
+      // Header text — bold, dark
       pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
+      pdf.setTextColor(0, 0, 0);
       cols.forEach(c => {
-        // Re-assert colours per cell: jsPDF's text() leaves the active fill
-        // colour set to the text colour, so a single setFillColor up front
-        // would only apply to the first rect drawn before any text.
-        pdf.setFillColor(0,0,0);
-        pdf.rect(c.x, y, c.w, hh, 'F');
-        pdf.setTextColor(255,255,255);
         const tl = pdf.splitTextToSize(c.title, c.w - 2*pad);
         const tx = c.align === 'right'  ? c.x + c.w - pad
                  : c.align === 'center' ? c.x + c.w / 2
@@ -1161,7 +1166,9 @@ $('#printBBS').addEventListener('click', async () => {
             pdf.text(ln, tx, y + (hh - n*lineH)/2 + i*lineH, { align:c.align, baseline:'top' }));
         }
       });
-      pdf.setTextColor(0,0,0);
+      // Thick bottom rule (header / data separator)
+      pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.4);
+      pdf.line(margin, y + hh, margin + usableW, y + hh);
       y += hh;
     }
 
@@ -1235,7 +1242,18 @@ $('#printBBS').addEventListener('click', async () => {
         pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
       }
 
-      cols.forEach(c => pdf.rect(c.x, y, c.w, rowH));
+      // Alternating row tint — very light, near-invisible on screen, minimal ink on print
+      if (i % 2 === 1) {
+        pdf.setFillColor(248, 248, 248);
+        pdf.rect(margin, y, usableW, rowH, 'F');
+      }
+      // Light vertical column separators
+      pdf.setDrawColor(200, 200, 200); pdf.setLineWidth(0.08);
+      cols.slice(1).forEach(c => pdf.line(c.x, y, c.x, y + rowH));
+      // Thin horizontal row bottom rule
+      pdf.setDrawColor(210, 210, 210); pdf.setLineWidth(0.1);
+      pdf.line(margin, y + rowH, margin + usableW, y + rowH);
+      pdf.setTextColor(0, 0, 0);
 
       putText(col('idx'),    t.idx,    y);
       putText(col('member'), t.member, y);
@@ -1247,7 +1265,7 @@ $('#printBBS').addEventListener('click', async () => {
         if (model && window.ShapeVector) {
           try { ShapeVector.toPdf(pdf, model, sx, sy, sk.w, sk.h); } catch {}
           // restore table stroke + text state the vector draw clobbered
-          pdf.setLineWidth(0.2); pdf.setDrawColor(0); pdf.setTextColor(0,0,0);
+          pdf.setLineWidth(0.1); pdf.setDrawColor(210, 210, 210); pdf.setTextColor(0,0,0);
           if (pdf.setLineCap) pdf.setLineCap('butt');
           pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
         } else {
@@ -1271,21 +1289,18 @@ $('#printBBS').addEventListener('click', async () => {
     // ── Totals row ──
     const totH = lineH + 2 * pad;
     if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
+    // Thick top rule to open the totals row, then thin bottom rule to close the table
+    pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.4);
+    pdf.line(margin, y, margin + usableW, y);
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
-    pdf.setTextColor(0,0,0);
+    pdf.setTextColor(0, 0, 0);
     const labelW = cols.slice(0,10).reduce((a,c)=>a+c.w,0);
-    // Re-assert the white fill before every cell: text() in between resets the
-    // active fill colour to the text colour (black), which would otherwise
-    // paint the following cells solid black.
-    const totCell = (x, w) => { pdf.setFillColor(255,255,255); pdf.rect(x, y, w, totH, 'FD'); };
-    totCell(margin, labelW);
     pdf.text('Totals:', margin + labelW - pad, y + pad, { align:'right', baseline:'top' });
-    totCell(col('totL').x, col('totL').w);
     pdf.text(fmt3(sumLen), col('totL').x + col('totL').w - pad, y + pad, { align:'right', baseline:'top' });
-    totCell(col('wtm').x,  col('wtm').w);
-    totCell(col('totW').x, col('totW').w);
-    pdf.text(fmt3(sumWt), col('totW').x + col('totW').w - pad, y + pad, { align:'right', baseline:'top' });
-    totCell(col('rem').x, col('rem').w);
+    pdf.text(fmt3(sumWt),  col('totW').x + col('totW').w - pad, y + pad, { align:'right', baseline:'top' });
+    // Thick bottom rule to close the table
+    pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.5);
+    pdf.line(margin, y + totH, margin + usableW, y + totH);
 
     // ── Page-number footers ──
     const pageCount = pdf.internal.getNumberOfPages();
