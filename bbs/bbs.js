@@ -1199,16 +1199,13 @@ $('#printBBS').addEventListener('click', async () => {
         // The textured model re-creates text from scratch (sz: cmd.size||13),
         // discarding any manual sz edits the user made in the vector model.
         // Carry over the original sz values so JSON-level edits take effect.
+        // Match by index among text-only elements: both models are built from
+        // the same shapeHist in order, so positional proximity can be wrong
+        // when size was changed after shapeVec was last saved.
         if (model && model.el && r.shapeVec && r.shapeVec.el) {
-          for (const oe of r.shapeVec.el) {
-            if (oe.k !== 'text' || !oe.sz) continue;
-            for (const ne of model.el) {
-              if (ne.k === 'text' && ne.t === oe.t &&
-                  Math.abs(ne.x - oe.x) < 2 && Math.abs(ne.y - oe.y) < 2) {
-                ne.sz = oe.sz; break;
-              }
-            }
-          }
+          const vecTexts = r.shapeVec.el.filter(e => e.k === 'text' && e.sz);
+          const modTexts = model.el.filter(e => e.k === 'text');
+          vecTexts.forEach((oe, i) => { if (modTexts[i]) modTexts[i].sz = oe.sz; });
         }
       }
       if (!model && r.shapeVec && r.shapeVec.vb) model = r.shapeVec;

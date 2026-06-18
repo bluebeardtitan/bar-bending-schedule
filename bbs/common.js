@@ -2,6 +2,7 @@
    Common utilities shared between BBS and CFS pages
    ========================= */
 const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
 
 const fmt3 = n => (Math.round(n * 1000) / 1000).toFixed(3);
 const fmt0 = n => Math.round(n).toString();

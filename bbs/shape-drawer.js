@@ -285,12 +285,12 @@ function orthoSnap(pt, anchor) {
    never exceeds half of either adjacent segment length.
    Returns { path: Path2D, samples }.
    ===================================================== */
-function buildOrthoGeometry(points, diam) {
+function buildOrthoGeometry(points, diam, filletR) {
   const STEP = 2;
   const n    = points.length;
   if (n < 2) return { path: new Path2D(), samples: [] };
 
-  const R    = Math.max(0, _orthoFillet);
+  const R    = Math.max(0, filletR !== undefined ? filletR : _orthoFillet);
   const path = new Path2D();
   const samples = [];
 
@@ -1039,12 +1039,14 @@ const drawerHTML = `
           <span style="font-size:10px;color:var(--muted)">pt</span>
         </div>
 
+        <div id="drawerLabelPosWrap">
         <div class="dp-divider"></div>
         <div class="dp-sub">Label Position <span style="color:var(--muted);font-weight:400">· aligned dim</span></div>
         <div id="drawerLabelPos" style="display:flex;gap:4px" role="group" aria-label="Aligned dimension label position">
           <button type="button" class="btn small primary lblpos" data-pos="above" style="flex:1;font-size:10px;padding:4px 4px">↑ Above</button>
           <button type="button" class="btn small ghost lblpos"   data-pos="on"    style="flex:1;font-size:10px;padding:4px 4px">— On</button>
           <button type="button" class="btn small ghost lblpos"   data-pos="below" style="flex:1;font-size:10px;padding:4px 4px">↓ Below</button>
+        </div>
         </div>
       </div>
 
@@ -1650,7 +1652,7 @@ function showPathHint(on, isOrtho) {
 function commitRebarPath() {
   if (livePts.length<2){cancelPath();return;}
   if (activeTool==='ortho-bar') {
-    history.push({type:'ortho-bar',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:false});
+    history.push({type:'ortho-bar',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:false,fillet:_orthoFillet});
   } else if (bezierMode&&bezierStartIdx>=1&&livePts.length>bezierStartIdx) {
     const sp=livePts.slice(0,bezierStartIdx+1);
     if(sp.length>=2) history.push({type:'rebar-path',points:sp,diam:getBarSize(),style:activeStyle,closed:false,bezier:false});
@@ -1897,7 +1899,7 @@ function onDown(e) {
       const snapped=orthoSnap(pt,livePts[livePts.length-1]);
       const first=livePts[0],closeThresh=16;
       if(livePts.length>=3&&Math.hypot(snapped.x-first.x,snapped.y-first.y)<closeThresh){
-        history.push({type:'ortho-bar',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:true});
+        history.push({type:'ortho-bar',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:true,fillet:_orthoFillet});
         cancelPath(); return;
       }
       livePts.push(snapped);
@@ -1999,9 +2001,11 @@ function setTool(t) {
   const pBar=document.getElementById('panel-bar'), pLabel=document.getElementById('panel-label');
   const pQuick=document.getElementById('panel-quick');
   const pTex=document.getElementById('panel-texture'), pGrid=document.getElementById('panel-grid');
+  const pLabelPos=document.getElementById('drawerLabelPosWrap');
   const noDraw=['shapes','texture','grid'];
   if(pBar)   pBar.style.display   = barTools.includes(t)   ? 'flex' : 'none';
   if(pLabel) pLabel.style.display = labelTools.includes(t) ? 'flex' : 'none';
+  if(pLabelPos) pLabelPos.style.display = t === 'text' ? 'none' : '';
   if(pQuick) pQuick.style.display = t==='shapes'           ? 'flex' : 'none';
   if(pTex)   pTex.style.display   = t==='texture'          ? 'flex' : 'none';
   if(pGrid)  pGrid.style.display  = t==='grid'             ? 'flex' : 'none';
@@ -2187,6 +2191,27 @@ function initDrawer() {
   });
 
   _syncGridBtn();   // reflect current state if re-opened
+
+  /* ── Drag-to-scroll for the tool action bar (mouse) ── */
+  const _bar = document.getElementById('toolBtns');
+  if (_bar) {
+    let _barDrag = false, _barDragX = 0, _barDragScroll = 0;
+    _bar.onmousedown = e => {
+      if (e.button !== 0) return;
+      _barDrag = true; _barDragX = e.pageX; _barDragScroll = _bar.scrollLeft;
+      _bar.style.cursor = 'grabbing';
+      e.preventDefault();
+    };
+    if (_bar._onmousemove) document.removeEventListener('mousemove', _bar._onmousemove);
+    if (_bar._onmouseup)   document.removeEventListener('mouseup',   _bar._onmouseup);
+    _bar._onmousemove = e => {
+      if (!_barDrag) return;
+      _bar.scrollLeft = _barDragScroll - (e.pageX - _barDragX);
+    };
+    _bar._onmouseup = () => { _barDrag = false; _bar.style.cursor = ''; };
+    document.addEventListener('mousemove', _bar._onmousemove);
+    document.addEventListener('mouseup',   _bar._onmouseup);
+  }
 
   setTool('rebar-path'); setStyle('tor');
 }
@@ -2746,7 +2771,10 @@ function buildVectorModel() {
     } else if (cmd.type === 'ortho-bar') {
       const pts = cmd.points || [];
       if (pts.length < 2) continue;
-      el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+      const fillet = cmd.fillet != null ? cmd.fillet : 0;
+      const barPts = cmd.closed ? [...pts, pts[0]] : pts;
+      const { samples } = buildOrthoGeometry(barPts, d, fillet);
+      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#1f1f1f', lw });
     } else if (cmd.type === 'rect') {
       const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
       el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#1f1f1f', lw });
@@ -2846,7 +2874,7 @@ function _barSamples(cmd, d) {
   if (cmd.type === 'rebar-path')
     return (cmd.bezier ? buildSplineGeometry(cmd.points, cmd.closed) : buildFilletGeometry(cmd.points, d, cmd.closed)).samples;
   if (cmd.type === 'ortho-bar')
-    return buildOrthoGeometry(cmd.closed ? [...cmd.points, cmd.points[0]] : cmd.points, d).samples;
+    return buildOrthoGeometry(cmd.closed ? [...cmd.points, cmd.points[0]] : cmd.points, d, cmd.fillet != null ? cmd.fillet : _orthoFillet).samples;
   if (cmd.type === 'rect') {
     const lx=Math.min(cmd.x,cmd.x+cmd.w), rx=Math.max(cmd.x,cmd.x+cmd.w), ty=Math.min(cmd.y,cmd.y+cmd.h), by=Math.max(cmd.y,cmd.y+cmd.h);
     const c=[{x:lx,y:ty},{x:rx,y:ty},{x:rx,y:by},{x:lx,y:by}];
@@ -2925,7 +2953,10 @@ function buildVectorModelFrom(hist) {
     } else if (cmd.type === 'ortho-bar') {
       const pts = cmd.points || [];
       if (pts.length < 2) continue;
-      el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+      const fillet = cmd.fillet != null ? cmd.fillet : 0;
+      const barPts = cmd.closed ? [...pts, pts[0]] : pts;
+      const { samples } = buildOrthoGeometry(barPts, d, fillet);
+      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#1f1f1f', lw });
     } else if (cmd.type === 'rect') {
       const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
       el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#1f1f1f', lw });
