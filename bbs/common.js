@@ -118,14 +118,44 @@ function clampPage() {
    name at event time, so they resolve against whichever page is loaded.
    ========================================================================= */
 
-/* ---- Project info (shared storage key 'bbs_info') ---- */
+/* ---- Project info (shared IDB key 'bbs_info') ---- */
 const INFO_DEFAULTS = { header: '', project: '', agency: '', ref: '' };
-let projectInfo = loadInfo();
-function loadInfo() {
-  const s = localStorage.getItem('bbs_info');
-  return Object.assign({}, INFO_DEFAULTS, s ? JSON.parse(s) : {});
+let projectInfo = Object.assign({}, INFO_DEFAULTS);  // populated in each page's initPage()
+async function loadInfo() {
+  const s = await AppDB.get('bbs_info');
+  return Object.assign({}, INFO_DEFAULTS, s ?? {});
 }
-function saveInfoToStorage() { localStorage.setItem('bbs_info', JSON.stringify(projectInfo)); }
+function saveInfoToStorage() { AppDB.set('bbs_info', projectInfo); }
+
+/* ---- Shared persistence factories ---- */
+
+/* Returns a persist() function that saves the page's `rows` global to IDB. */
+function makePersist(key) {
+  return function persist() { AppDB.set(key, rows); };
+}
+
+/* Returns load/save helpers for a page's settings object.
+   load() → Promise<settings>  (call once in initPage)
+   save() → writes current `settings` global to IDB (fire-and-forget) */
+function makeSettings(key, defaults) {
+  return {
+    load: async () => Object.assign(structuredClone(defaults), (await AppDB.get(key)) ?? {}),
+    save: () => AppDB.set(key, settings),
+  };
+}
+
+/* ---- Sort rows by member group then mark (shared between BBS and CFS) ---- */
+function sortRowsByMemberGroup() {
+  const groups = [], memberOrder = [];
+  for (const r of rows) {
+    const key = r.member;
+    if (!memberOrder.includes(key)) { memberOrder.push(key); groups.push({ member: key, items: [] }); }
+    groups[memberOrder.indexOf(key)].items.push(r);
+  }
+  for (const g of groups)
+    g.items.sort((a, b) => (a.mark || '').localeCompare(b.mark || '', undefined, { numeric: true }));
+  rows = groups.flatMap(g => g.items);
+}
 function applyInfoToForm() {
   $('#infoHeader').value  = projectInfo.header  || '';
   $('#infoProject').value = projectInfo.project || '';
@@ -278,11 +308,28 @@ function initCommonChrome(opts) {
   on('#btnSettings', () => { const open = !$('#settingsPanel').classList.contains('collapsed'); $('#infoPanel').classList.add('collapsed'); $('#settingsPanel').classList.toggle('collapsed', open); });
   on('#btnHelp', () => document.getElementById('helpDlg').showModal());
   on('#resetSettings', () => { resetSettings(); alert('Settings reset to defaults.'); });
-  on('#clearStorage', () => {
+  on('#clearStorage', async () => {
     if (!confirm('Erase ALL saved data — schedule, project info, settings and theme — and reset everything to defaults?\n\nThis cannot be undone.')) return;
-    try { localStorage.clear(); } catch (_) {}
-    try { sessionStorage.clear(); } catch (_) {}
+    await AppDB.clear();
+    localStorage.removeItem('bbs_theme');
     location.reload();
+  });
+  on('#regenSketches', () => {
+    let n = 0;
+    for (const r of rows) {
+      if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
+        // Tighten the viewBox only — preserves all el[] content (including any
+        // manually edited sz/label values) while fixing the oversized-vb issue.
+        r.shapeVec = ShapeVector.tightenViewBox(r.shapeVec); n++;
+      } else if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
+        // No shapeVec at all — build one fresh from the raw history.
+        const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
+        if (fresh) { r.shapeVec = fresh; n++; }
+      }
+    }
+    persist(); render();
+    if (n === 0) alert('No sketches found to regenerate.');
+    else alert(`Regenerated ${n} sketch${n !== 1 ? 'es' : ''}.`);
   });
   // Close any open options menu on outside click
   document.addEventListener('click', e => { if (!e.target.closest('.options-menu') && !e.target.closest('.options-btn')) closeOptionsMenus(); });

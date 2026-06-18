@@ -2,7 +2,7 @@
    Concrete Casting & Formwork Schedule (CFS)
    Mirrors the BBS tool's structure & reporting format, with concrete-
    volume / shuttering-area maths. Shares the project-info and theme
-   with the BBS page; keeps its own rows & settings in localStorage.
+   with the BBS page; keeps its own rows & settings in IndexedDB (AppDB).
    ===================================================================== */
 /* =========================
    Formatting
@@ -20,11 +20,8 @@ const money = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2})
    Settings
    ========================= */
 const DEFAULTS = { defaultGrade:'M25', concWastage:3, fwWastage:5, concRate:0, fwRate:0 };
-let settings = loadSettings();
-function loadSettings(){
-  const s = localStorage.getItem('cfs_settings');
-  return Object.assign({}, DEFAULTS, s ? JSON.parse(s) : {});
-}
+let settings = Object.assign({}, DEFAULTS);
+const _s = makeSettings('cfs_settings', DEFAULTS);
 function applySettingsToForm(){
   $('#defaultGrade').value = settings.defaultGrade;
   $('#concWastage').value  = settings.concWastage;
@@ -32,10 +29,7 @@ function applySettingsToForm(){
   $('#concRate').value     = settings.concRate;
   $('#fwRate').value       = settings.fwRate;
 }
-function saveSettings(){
-  localStorage.setItem('cfs_settings', JSON.stringify(settings));
-  applySettingsToForm();
-}
+function saveSettings(){ _s.save(); applySettingsToForm(); }
 function resetSettings(){ settings = Object.assign({}, DEFAULTS); saveSettings(); renderSummary(); }
 $('#saveSettings').addEventListener('click', () => {
   settings.defaultGrade = $('#defaultGrade').value;
@@ -253,15 +247,15 @@ function updatePreview(){
 /* =========================
    State & Table
    ========================= */
-let rows = JSON.parse(localStorage.getItem('cfs_rows') || '[]');
+let rows = [];
 let editIndex = -1;
-let currentPage = (parseInt(localStorage.getItem('cfs_page')) || 1)
-let navPersistTimer = null
-let lastEditedIndex = -1
-const DEFAULT_PAGE_SIZE = 25
-let pageSize = DEFAULT_PAGE_SIZE
-let searchTerm = ''
-function persist(){ localStorage.setItem('cfs_rows', JSON.stringify(rows)); }
+let currentPage = 1;
+let navPersistTimer = null;
+let lastEditedIndex = -1;
+const DEFAULT_PAGE_SIZE = 25;
+let pageSize = DEFAULT_PAGE_SIZE;
+let searchTerm = '';
+const persist = makePersist('cfs_rows');
 
 /* Free-text row matcher for the schedule search box. */
 function rowMatchesSearch(r, t){
@@ -380,7 +374,7 @@ function render(){
   renderSummary(visibleRows);
   renderPagination(visibleCount)
   updateRecordNav()
-  localStorage.setItem('cfs_page', String(currentPage))
+  AppDB.set('cfs_page', currentPage);
 }
 
 /* =========================
@@ -470,25 +464,6 @@ $('#memberForm').addEventListener('submit', e => {
 
 /* Reset button reloads to a clean form */
 $('#reset').addEventListener('click', () => location.reload());
-
-/* =========================
-   Group members & sort inside groups
-   ========================= */
-function sortRowsByMemberGroup() {
-  const groups = [], memberOrder = []
-  for (const r of rows) {
-    const key = r.member
-    if (!memberOrder.includes(key)) {
-      memberOrder.push(key)
-      groups.push({ member: key, items: [] })
-    }
-    groups[memberOrder.indexOf(key)].items.push(r)
-  }
-  for (const g of groups) {
-    g.items.sort((a, b) => (a.mark || '').localeCompare(b.mark || '', undefined, { numeric: true }))
-  }
-  rows = groups.flatMap(g => g.items)
-}
 
 /* =========================
    Edit & Delete
@@ -872,25 +847,6 @@ $('#shapeDrawBtn').addEventListener('click', () => {
   }, { style:'none', history: currentShapeHist });   // reload the saved drawing for editing
 });
 
-$('#regenSketches').addEventListener('click', () => {
-  let rebuilt = 0, tightened = 0;
-  for (const r of rows) {
-    if (!r.shapeVec && !r.shapeHist) continue;
-    if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
-      const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
-      if (fresh) { r.shapeVec = fresh; rebuilt++; continue; }
-    }
-    if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
-      const tight = ShapeVector.tightenViewBox(r.shapeVec);
-      if (tight !== r.shapeVec) { r.shapeVec = tight; tightened++; }
-    }
-  }
-  persist(); render();
-  const total = rebuilt + tightened;
-  if (total === 0) alert('No sketches found to regenerate.');
-  else alert(`Regenerated ${total} sketch${total !== 1 ? 'es' : ''} (${rebuilt} rebuilt from history, ${tightened} viewbox-tightened).`);
-});
-
 /* =========================
    PDF Export  (landscape A4, mirrors the BBS report layout)
    ========================= */
@@ -1188,16 +1144,31 @@ $('#printBBS').addEventListener('click', async () => {
 /* =========================
    Init
    ========================= */
-applySettingsToForm();
-applyInfoToForm();
-updatePrintMeta();
-$('#grade').value = settings.defaultGrade;
-showShape($('#section').value);
-updateFwModes();
-updatePreview();
-initCommonChrome({
-  formSelector: '#memberForm',
-  pageSizes: [25, 50, 100, 0],
-  theme: { light: { icon: '🧱', label: 'Rust' }, dark: { icon: '🏗️', label: 'Steel' } },
-});
-render();
+async function initPage() {
+  await AppDB.migrateFromLS([
+    ['cfs_rows',     'cfs_rows',     true],
+    ['cfs_settings', 'cfs_settings', true],
+    ['cfs_page',     'cfs_page',     false],
+    ['bbs_info',     'bbs_info',     true],
+  ]);
+  [rows, settings, currentPage] = await Promise.all([
+    AppDB.get('cfs_rows').then(v => v ?? []),
+    _s.load(),
+    AppDB.get('cfs_page').then(v => Number(v) || 1),
+  ]);
+  projectInfo = await loadInfo();
+  applyInfoToForm();
+  updatePrintMeta();
+  applySettingsToForm();
+  $('#grade').value = settings.defaultGrade;
+  showShape($('#section').value);
+  updateFwModes();
+  updatePreview();
+  initCommonChrome({
+    formSelector: '#memberForm',
+    pageSizes: [25, 50, 100, 0],
+    theme: { light: { icon: '🧱', label: 'Rust' }, dark: { icon: '🏗️', label: 'Steel' } },
+  });
+  render();
+}
+initPage();

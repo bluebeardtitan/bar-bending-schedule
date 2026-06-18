@@ -10,13 +10,9 @@ const DEFAULTS = {
   hooks: { '90': 10, '135': 12, '180': 14 },
   ded:   { '45': 1, '90': 2,  '135': 3  }
 };
-let settings = loadSettings();
-function loadSettings(){
-  const s = localStorage.getItem('bbs_settings');
-  return s ? JSON.parse(s) : structuredClone(DEFAULTS);
-}
-function saveSettings(){
-  localStorage.setItem('bbs_settings', JSON.stringify(settings));
+let settings = structuredClone(DEFAULTS);
+const _s = makeSettings('bbs_settings', DEFAULTS);
+function applySettingsToForm(){
   $('#unitMethod').value = settings.unitMethod;
   $('#density').value    = settings.density;
   $('#hook90').value     = settings.hooks['90'];
@@ -27,10 +23,8 @@ function saveSettings(){
   $('#ded135').value     = settings.ded['135'];
   updatePreviews();
 }
-function resetSettings(){
-  settings = structuredClone(DEFAULTS);
-  saveSettings();
-}
+function saveSettings(){ _s.save(); applySettingsToForm(); }
+function resetSettings(){ settings = structuredClone(DEFAULTS); saveSettings(); }
 function updatePreviews(){
   $('#unitWtPreview').textContent   = settings.unitMethod==='d2over162' ? 'd²/162' : 'π/4·(d/1000)²·ρ';
   $('#bendRulePreview').textContent = 'IS-style';
@@ -202,17 +196,17 @@ function recalcRow(row){
 /* =========================
    State & Table
    ========================= */
-let rows = JSON.parse(localStorage.getItem('bbs_rows')||'[]');
+let rows = [];
 let editIndex = -1;
-let currentPage = (parseInt(localStorage.getItem('bbs_page')) || 1)
-let navPersistTimer = null
-let submitBtnTimer = null
-let lastEditedIndex = -1
-let searchTerm = ''
-const DEFAULT_PAGE_SIZE = 25
-let pageSize = DEFAULT_PAGE_SIZE
+let currentPage = 1;
+let navPersistTimer = null;
+let submitBtnTimer = null;
+let lastEditedIndex = -1;
+let searchTerm = '';
+const DEFAULT_PAGE_SIZE = 25;
+let pageSize = DEFAULT_PAGE_SIZE;
 
-function persist(){ localStorage.setItem('bbs_rows', JSON.stringify(rows)); }
+const persist = makePersist('bbs_rows');
 function recalcSums(filtered){
   const items = filtered || rows;
   let sumLen=0, sumWt=0;
@@ -295,7 +289,7 @@ function render(){
   recalcSums(visibleRows);
   renderPagination(visibleCount)
   updateRecordNav()
-  localStorage.setItem('bbs_page', String(currentPage))
+  AppDB.set('bbs_page', currentPage);
 }
 
 /* =========================
@@ -550,25 +544,6 @@ $('#barForm').addEventListener('submit', e=>{
   clearShapeUpload();
   showShape('straight'); showQty('manual'); resetCustom(); updateCustomPreview();
 });
-
-/* =========================
-   Group members & sort inside groups
-   ========================= */
-function sortRowsByMemberGroup() {
-  const groups = [], memberOrder = []
-  for (const r of rows) {
-    const key = r.member
-    if (!memberOrder.includes(key)) {
-      memberOrder.push(key)
-      groups.push({ member: key, items: [] })
-    }
-    groups[memberOrder.indexOf(key)].items.push(r)
-  }
-  for (const g of groups) {
-    g.items.sort((a, b) => (a.mark || '').localeCompare(b.mark || '', undefined, { numeric: true }))
-  }
-  rows = groups.flatMap(g => g.items)
-}
 
 /* =========================
    Edit & Delete
@@ -1000,25 +975,6 @@ $('#loadJSON').addEventListener('click',()=>{
   inp.click();
 });
 
-$('#regenSketches').addEventListener('click', () => {
-  let rebuilt = 0, tightened = 0;
-  for (const r of rows) {
-    if (!r.shapeVec && !r.shapeHist) continue;
-    if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
-      const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
-      if (fresh) { r.shapeVec = fresh; rebuilt++; continue; }
-    }
-    if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
-      const tight = ShapeVector.tightenViewBox(r.shapeVec);
-      if (tight !== r.shapeVec) { r.shapeVec = tight; tightened++; }
-    }
-  }
-  persist(); render();
-  const total = rebuilt + tightened;
-  if (total === 0) alert('No sketches found to regenerate.');
-  else alert(`Regenerated ${total} sketch${total !== 1 ? 'es' : ''} (${rebuilt} rebuilt from history, ${tightened} viewbox-tightened).`);
-});
-
 /* =========================
    Print  (fills meta + date)
    ========================= */
@@ -1430,19 +1386,34 @@ $('#shapeClearBtn').addEventListener('click',clearShapeUpload);
 /* =========================
    Init
    ========================= */
-saveSettings();
-applyInfoToForm();
-updatePrintMeta();
-showShape($('#shape').value);
-showQty($('#qtyMode').value);
-resetCustom();
-updateCustomPreview();
-initCommonChrome({
-  formSelector: '#barForm',
-  pageSizes: [10, 25, 50, 0],
-  theme: { light: { icon: '🔩', label: 'Rust' }, dark: { icon: '⚙️', label: 'Steel' } },
-});
-render();
+async function initPage() {
+  await AppDB.migrateFromLS([
+    ['bbs_rows',     'bbs_rows',     true],
+    ['bbs_settings', 'bbs_settings', true],
+    ['bbs_page',     'bbs_page',     false],
+    ['bbs_info',     'bbs_info',     true],
+  ]);
+  [rows, settings, currentPage] = await Promise.all([
+    AppDB.get('bbs_rows').then(v => v ?? []),
+    _s.load(),
+    AppDB.get('bbs_page').then(v => Number(v) || 1),
+  ]);
+  projectInfo = await loadInfo();
+  applyInfoToForm();
+  updatePrintMeta();
+  applySettingsToForm();
+  showShape($('#shape').value);
+  showQty($('#qtyMode').value);
+  resetCustom();
+  updateCustomPreview();
+  initCommonChrome({
+    formSelector: '#barForm',
+    pageSizes: [10, 25, 50, 0],
+    theme: { light: { icon: '🔩', label: 'Rust' }, dark: { icon: '⚙️', label: 'Steel' } },
+  });
+  render();
+}
+initPage();
 
 /* =========================
    Shape Drawer Integration
