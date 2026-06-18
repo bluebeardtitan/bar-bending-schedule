@@ -13,9 +13,6 @@ const fmtDim = n => String(Math.round(Number(n)||0)); // whole mm
 const TIMES = '×';
 const money = n => Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
 
-/* Project info (INFO_DEFAULTS, projectInfo, load/save/apply/read + print meta)
-   and the Info-panel wiring live in common.js, shared with the BBS page. */
-
 /* =========================
    Settings
    ========================= */
@@ -247,14 +244,9 @@ function updatePreview(){
 /* =========================
    State & Table
    ========================= */
-let rows = [];
-let editIndex = -1;
-let currentPage = 1;
-let navPersistTimer = null;
-let lastEditedIndex = -1;
-const DEFAULT_PAGE_SIZE = 25;
-let pageSize = DEFAULT_PAGE_SIZE;
-let searchTerm = '';
+let rows = [], editIndex = -1, currentPage = 1;
+let navPersistTimer = null, lastEditedIndex = -1;
+let searchTerm = '', pageSize = 25;
 const persist = makePersist('cfs_rows');
 
 /* Free-text row matcher for the schedule search box. */
@@ -557,7 +549,7 @@ function loadRow(i) {
   const r = rows[i]
   if (!r) return
   editIndex = i
-  if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
+  if (pageSize > 0 && !searchTerm) currentPage = Math.floor(i / pageSize) + 1
   const submitBtn = document.querySelector('.submit-btn')
   if (submitBtn) submitBtn.textContent = '✏️ Update Schedule'
   $('#member').value  = r.member
@@ -1145,12 +1137,6 @@ $('#printBBS').addEventListener('click', async () => {
    Init
    ========================= */
 async function initPage() {
-  await AppDB.migrateFromLS([
-    ['cfs_rows',     'cfs_rows',     true],
-    ['cfs_settings', 'cfs_settings', true],
-    ['cfs_page',     'cfs_page',     false],
-    ['bbs_info',     'bbs_info',     true],
-  ]);
   [rows, settings, currentPage] = await Promise.all([
     AppDB.get('cfs_rows').then(v => v ?? []),
     _s.load(),

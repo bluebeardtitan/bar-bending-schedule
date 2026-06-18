@@ -2,7 +2,6 @@
    Common utilities shared between BBS and CFS pages
    ========================= */
 const $ = sel => document.querySelector(sel);
-const $$ = sel => Array.from(document.querySelectorAll(sel));
 
 const fmt3 = n => (Math.round(n * 1000) / 1000).toFixed(3);
 const fmt0 = n => Math.round(n).toString();
@@ -122,40 +121,9 @@ function clampPage() {
 const INFO_DEFAULTS = { header: '', project: '', agency: '', ref: '' };
 let projectInfo = Object.assign({}, INFO_DEFAULTS);  // populated in each page's initPage()
 async function loadInfo() {
-  const s = await AppDB.get('bbs_info');
-  return Object.assign({}, INFO_DEFAULTS, s ?? {});
+  return Object.assign({}, INFO_DEFAULTS, (await AppDB.get('bbs_info')) ?? {});
 }
 function saveInfoToStorage() { AppDB.set('bbs_info', projectInfo); }
-
-/* ---- Shared persistence factories ---- */
-
-/* Returns a persist() function that saves the page's `rows` global to IDB. */
-function makePersist(key) {
-  return function persist() { AppDB.set(key, rows); };
-}
-
-/* Returns load/save helpers for a page's settings object.
-   load() → Promise<settings>  (call once in initPage)
-   save() → writes current `settings` global to IDB (fire-and-forget) */
-function makeSettings(key, defaults) {
-  return {
-    load: async () => Object.assign(structuredClone(defaults), (await AppDB.get(key)) ?? {}),
-    save: () => AppDB.set(key, settings),
-  };
-}
-
-/* ---- Sort rows by member group then mark (shared between BBS and CFS) ---- */
-function sortRowsByMemberGroup() {
-  const groups = [], memberOrder = [];
-  for (const r of rows) {
-    const key = r.member;
-    if (!memberOrder.includes(key)) { memberOrder.push(key); groups.push({ member: key, items: [] }); }
-    groups[memberOrder.indexOf(key)].items.push(r);
-  }
-  for (const g of groups)
-    g.items.sort((a, b) => (a.mark || '').localeCompare(b.mark || '', undefined, { numeric: true }));
-  rows = groups.flatMap(g => g.items);
-}
 function applyInfoToForm() {
   $('#infoHeader').value  = projectInfo.header  || '';
   $('#infoProject').value = projectInfo.project || '';
@@ -176,6 +144,30 @@ function updatePrintMeta() {
   const titleEl = $('#pmHeaderTitle');
   if (projectInfo.header) { titleEl.innerHTML = escapeHTML(projectInfo.header).replace(/\r?\n/g, '<br>'); titleEl.style.display = 'block'; }
   else { titleEl.textContent = ''; titleEl.style.display = 'none'; }
+}
+
+/* ---- Shared persistence factories ---- */
+function makePersist(key) {
+  return function persist() { AppDB.set(key, rows); };
+}
+function makeSettings(key, defaults) {
+  return {
+    load: async () => Object.assign(structuredClone(defaults), (await AppDB.get(key)) ?? {}),
+    save: () => AppDB.set(key, settings),
+  };
+}
+
+/* ---- Sort rows by member group then mark (shared between BBS and CFS) ---- */
+function sortRowsByMemberGroup() {
+  const groups = [], memberOrder = [];
+  for (const r of rows) {
+    const key = r.member;
+    if (!memberOrder.includes(key)) { memberOrder.push(key); groups.push({ member: key, items: [] }); }
+    groups[memberOrder.indexOf(key)].items.push(r);
+  }
+  for (const g of groups)
+    g.items.sort((a, b) => (a.mark || '').localeCompare(b.mark || '', undefined, { numeric: true }));
+  rows = groups.flatMap(g => g.items);
 }
 
 /* ---- Form feedback toast (BBS used window._showFeedback; keep that alias) ---- */

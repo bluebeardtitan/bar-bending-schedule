@@ -1,6 +1,3 @@
-/* Project info (INFO_DEFAULTS, projectInfo, load/save/apply/read + print meta)
-   and the Info-panel wiring live in common.js, shared with the formwork page. */
-
 /* =========================
    Settings
    ========================= */
@@ -196,15 +193,9 @@ function recalcRow(row){
 /* =========================
    State & Table
    ========================= */
-let rows = [];
-let editIndex = -1;
-let currentPage = 1;
-let navPersistTimer = null;
-let submitBtnTimer = null;
-let lastEditedIndex = -1;
-let searchTerm = '';
-const DEFAULT_PAGE_SIZE = 25;
-let pageSize = DEFAULT_PAGE_SIZE;
+let rows = [], editIndex = -1, currentPage = 1;
+let navPersistTimer = null, submitBtnTimer = null, lastEditedIndex = -1;
+let searchTerm = '', pageSize = 25;
 
 const persist = makePersist('bbs_rows');
 function recalcSums(filtered){
@@ -638,7 +629,7 @@ function loadRow(i) {
   const r = rows[i]
   if (!r) return
   editIndex = i
-  if (pageSize > 0) currentPage = Math.floor(i / pageSize) + 1
+  if (pageSize > 0 && !searchTerm) currentPage = Math.floor(i / pageSize) + 1
   if (submitBtnTimer) { clearTimeout(submitBtnTimer); submitBtnTimer = null }
   const submitBtn = document.querySelector('.submit-btn')
   if (submitBtn) {
@@ -1387,12 +1378,6 @@ $('#shapeClearBtn').addEventListener('click',clearShapeUpload);
    Init
    ========================= */
 async function initPage() {
-  await AppDB.migrateFromLS([
-    ['bbs_rows',     'bbs_rows',     true],
-    ['bbs_settings', 'bbs_settings', true],
-    ['bbs_page',     'bbs_page',     false],
-    ['bbs_info',     'bbs_info',     true],
-  ]);
   [rows, settings, currentPage] = await Promise.all([
     AppDB.get('bbs_rows').then(v => v ?? []),
     _s.load(),
