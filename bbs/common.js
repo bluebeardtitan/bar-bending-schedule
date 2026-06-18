@@ -317,14 +317,14 @@ function initCommonChrome(opts) {
   on('#regenSketches', () => {
     let n = 0;
     for (const r of rows) {
-      if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
-        // Tighten the viewBox only — preserves all el[] content (including any
-        // manually edited sz/label values) while fixing the oversized-vb issue.
-        r.shapeVec = ShapeVector.tightenViewBox(r.shapeVec); n++;
-      } else if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
-        // No shapeVec at all — build one fresh from the raw history.
+      if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
+        // shapeHist is the source of truth — always rederive shapeVec from it.
+        // Edit shapeHist entries (size, label, etc.) in the JSON to change output.
         const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
         if (fresh) { r.shapeVec = fresh; n++; }
+      } else if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
+        // No history available — at least fix an oversized viewBox in place.
+        r.shapeVec = ShapeVector.tightenViewBox(r.shapeVec); n++;
       }
     }
     persist(); render();
