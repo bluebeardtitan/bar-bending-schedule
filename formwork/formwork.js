@@ -872,6 +872,25 @@ $('#shapeDrawBtn').addEventListener('click', () => {
   }, { style:'none', history: currentShapeHist });   // reload the saved drawing for editing
 });
 
+$('#regenSketches').addEventListener('click', () => {
+  let rebuilt = 0, tightened = 0;
+  for (const r of rows) {
+    if (!r.shapeVec && !r.shapeHist) continue;
+    if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
+      const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
+      if (fresh) { r.shapeVec = fresh; rebuilt++; continue; }
+    }
+    if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
+      const tight = ShapeVector.tightenViewBox(r.shapeVec);
+      if (tight !== r.shapeVec) { r.shapeVec = tight; tightened++; }
+    }
+  }
+  persist(); render();
+  const total = rebuilt + tightened;
+  if (total === 0) alert('No sketches found to regenerate.');
+  else alert(`Regenerated ${total} sketch${total !== 1 ? 'es' : ''} (${rebuilt} rebuilt from history, ${tightened} viewbox-tightened).`);
+});
+
 /* =========================
    PDF Export  (landscape A4, mirrors the BBS report layout)
    ========================= */

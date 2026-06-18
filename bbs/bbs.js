@@ -1000,6 +1000,25 @@ $('#loadJSON').addEventListener('click',()=>{
   inp.click();
 });
 
+$('#regenSketches').addEventListener('click', () => {
+  let rebuilt = 0, tightened = 0;
+  for (const r of rows) {
+    if (!r.shapeVec && !r.shapeHist) continue;
+    if (r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
+      const fresh = ShapeDrawer.buildVectorModelFrom(r.shapeHist);
+      if (fresh) { r.shapeVec = fresh; rebuilt++; continue; }
+    }
+    if (r.shapeVec && window.ShapeVector && ShapeVector.tightenViewBox) {
+      const tight = ShapeVector.tightenViewBox(r.shapeVec);
+      if (tight !== r.shapeVec) { r.shapeVec = tight; tightened++; }
+    }
+  }
+  persist(); render();
+  const total = rebuilt + tightened;
+  if (total === 0) alert('No sketches found to regenerate.');
+  else alert(`Regenerated ${total} sketch${total !== 1 ? 'es' : ''} (${rebuilt} rebuilt from history, ${tightened} viewbox-tightened).`);
+});
+
 /* =========================
    Print  (fills meta + date)
    ========================= */

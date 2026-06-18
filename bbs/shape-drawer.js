@@ -2891,8 +2891,63 @@ function buildTexturedModel(hist) {
   return { vb, el };
 }
 
+/* Like buildVectorModel() but takes history as a parameter so it can be
+   called from outside the drawer (e.g. to regenerate stale shapeVec on old
+   saved rows whose vb was the full canvas rather than the tight bbox). */
+function buildVectorModelFrom(hist) {
+  if (!hist || !hist.length) return null;
+  if (hist.some(c => c.type === 'shape')) return null;
+  const bounds = computeHistoryBounds(hist);
+  if (!bounds) return null;
+  const { minX, minY, maxX, maxY } = bounds;
+  const bw = maxX-minX, bh = maxY-minY;
+  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
+  const vb = [minX-p, minY-p, bw+p*2, bh+p*2];
+  const el = [];
+  for (const cmd of hist) {
+    const d = cmd.diam || 16, lw = _barLW(d);
+    if (cmd.type === 'rebar-path') {
+      const pts = cmd.points || [];
+      if (pts.length < 2) continue;
+      if (cmd.bezier) {
+        const n = pts.length, T = 0.2;
+        const ext = cmd.closed ? [...pts, pts[0], pts[1]] : [pts[0], ...pts, pts[n-1]];
+        const segCount = cmd.closed ? n : n-1;
+        const s = [];
+        for (let i = 0; i < segCount; i++) {
+          const P0=ext[i], P1=ext[i+1], P2=ext[i+2], P3=ext[i+3]||ext[i+2];
+          s.push([P1.x+T*(P2.x-P0.x), P1.y+T*(P2.y-P0.y), P2.x-T*(P3.x-P1.x), P2.y-T*(P3.y-P1.y), P2.x, P2.y]);
+        }
+        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#1f1f1f', lw });
+      } else {
+        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+      }
+    } else if (cmd.type === 'ortho-bar') {
+      const pts = cmd.points || [];
+      if (pts.length < 2) continue;
+      el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+    } else if (cmd.type === 'rect') {
+      const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
+      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#1f1f1f', lw });
+    } else if (cmd.type === 'circle') {
+      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
+    } else if (cmd.type === 'text') {
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz: Math.round((cmd.size||13) / PX_PER_PT), col:DIM_GRAY, anchor:'l' });
+    } else if (cmd.type === 'dim-aligned') {
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
+    } else if (cmd.type === 'dim-angular') {
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size);
+    } else if (cmd.type === 'dim-leader') {
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size);
+    }
+  }
+  if (!el.length) return null;
+  return { vb, el };
+}
+
 window.ShapeDrawer = {
   buildTexturedModel,
+  buildVectorModelFrom,
   async open(callback, opts) {
     ensureDrawerModal();
     await loadShapeLibrary();

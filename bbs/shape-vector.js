@@ -235,5 +235,34 @@
     });
   }
 
-  window.ShapeVector = { toSVG, toDataURL, toPdf, downscale };
+  /* Recompute the vb (viewBox) from the actual element coordinates.
+     Used to fix old saved sketches whose vb was the full canvas size
+     rather than a tight bounding box, which made them render tiny in PDF. */
+  function tightenViewBox(model) {
+    if (!model || !model.el || !model.vb) return model;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const exp = (x, y) => {
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    };
+    for (const e of model.el) {
+      switch (e.k) {
+        case 'path': case 'fill': if (e.d) for (const p of e.d) exp(p[0], p[1]); break;
+        case 'bez':
+          exp(e.m[0], e.m[1]);
+          if (e.s) for (const s of e.s) exp(s[4], s[5]);
+          break;
+        case 'rect': exp(e.x, e.y); exp(e.x + (e.w||0), e.y + (e.h||0)); break;
+        case 'ell':  exp(e.cx-(e.rx||0), e.cy-(e.ry||0)); exp(e.cx+(e.rx||0), e.cy+(e.ry||0)); break;
+        case 'line': exp(e.a[0], e.a[1]); exp(e.b[0], e.b[1]); break;
+        case 'text': exp(e.x, e.y); break;
+      }
+    }
+    if (!isFinite(minX)) return model;
+    const bw = maxX - minX, bh = maxY - minY;
+    const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
+    return { vb: [minX - p, minY - p, bw + p*2, bh + p*2], el: model.el };
+  }
+
+  window.ShapeVector = { toSVG, toDataURL, toPdf, downscale, tightenViewBox };
 })();
