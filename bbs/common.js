@@ -88,7 +88,6 @@ function buildExportJSON(data) {
       const items = v.map(r => {
         const { shapeVec, shapeHist, ...rest } = r;
         const extras = [];
-        if (shapeVec  !== undefined) extras.push('"shapeVec": '  + JSON.stringify(shapeVec));
         if (shapeHist !== undefined) extras.push('"shapeHist": ' + JSON.stringify(shapeHist));
         if (!extras.length) return '    ' + JSON.stringify(rest);
         const base = JSON.stringify(rest);

@@ -759,7 +759,16 @@ $('#loadJSON').addEventListener('click', () => {
     fr.onload = () => {
       try {
         const data = JSON.parse(fr.result);
-        if (Array.isArray(data.rows))  { rows = data.rows; editIndex = -1; }
+        if (Array.isArray(data.rows))  {
+          rows = data.rows; editIndex = -1;
+          if (window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
+            for (const r of rows) {
+              if (r.shapeHist && !r.shapeVec) {
+                try { const v = ShapeDrawer.buildVectorModelFrom(r.shapeHist); if (v) r.shapeVec = v; } catch {}
+              }
+            }
+          }
+        }
         if (data.settings)             { settings = Object.assign({}, DEFAULTS, data.settings); saveSettings(); }
         if (data.projectInfo)          { projectInfo = Object.assign({}, INFO_DEFAULTS, data.projectInfo); applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); }
         persist(); render();
