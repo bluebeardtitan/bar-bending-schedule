@@ -210,7 +210,11 @@ function recalcSums(filtered){
 }
 /* Thumbnail/preview source for a row's shape — vector (SVG) preferred, raster fallback. */
 function shapeSrc(r){
-  if(r && r.shapeVec && window.ShapeVector) return ShapeVector.toDataURL(r.shapeVec);
+  if(r && r.shapeVec && window.ShapeVector) {
+    const isDark = document.documentElement.dataset.theme === 'dark';
+    const cols = isDark ? { bar: '#dde3f0', dim: '#8a9ab8' } : undefined;
+    return ShapeVector.toDataURL(r.shapeVec, cols);
+  }
   return (r && r.shapeImg) || '';
 }
 
@@ -253,7 +257,7 @@ function render(){
       <td class="mono right">${r.dia}</td>
       <td>${r.shapeLabel}</td>
       <td style="text-align:center;padding:4px 6px">${src
-        ? `<img src="${src}" alt="shape" class="sketch-thumb" data-enlarge="${idx}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:var(--input-bg);padding:2px;cursor:zoom-in">`
+        ? `<img src="${src}" alt="shape" class="sketch-thumb" data-enlarge="${idx}" title="Click to enlarge" style="max-width:120px;max-height:78px;width:100%;height:auto;object-fit:contain;display:block;margin:0 auto;border-radius:4px;background:#fff;padding:2px;cursor:zoom-in">`
         : '<span class="subtle">—</span>'}</td>
       <td class="mono" style="font-size:11px;line-height:1.4;min-width:140px">${r.clCalc||'<span class="subtle">—</span>'}</td>
       <td class="mono right">${fmt0(r.clPerBarMm)}</td>

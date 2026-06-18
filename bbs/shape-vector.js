@@ -27,12 +27,14 @@
   const num = (n) => (Math.round(n * 100) / 100);
 
   /* ── SVG ── */
-  function toSVG(model) {
+  function toSVG(model, colors) {
     if (!model || !model.vb || !model.el) return '';
+    const barCol = (colors && colors.bar) || BAR_COL;
+    const dimCol = (colors && colors.dim) || DIM_COL;
     const [vx, vy, vw, vh] = model.vb;
     const parts = [];
     for (const e of model.el) {
-      const col = e.col || (e.k === 'fill' ? DIM_COL : BAR_COL);
+      const col = e.col || (e.k === 'fill' ? dimCol : barCol);
       const lw  = e.lw != null ? e.lw : 1.4;
       const cap = 'stroke-linecap="round" stroke-linejoin="round"';
       const dash = e.dash ? ' stroke-dasharray="4 3"' : '';
@@ -81,8 +83,8 @@
   }
 
   /* Data-URL form for <img src> — keep it readable (no base64) so it compresses well. */
-  function toDataURL(model) {
-    const svg = toSVG(model);
+  function toDataURL(model, colors) {
+    const svg = toSVG(model, colors);
     return svg ? 'data:image/svg+xml,' + encodeURIComponent(svg) : '';
   }
 
