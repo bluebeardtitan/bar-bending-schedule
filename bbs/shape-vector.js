@@ -68,7 +68,7 @@
         case 'text': {
           const anchor = e.anchor === 'l' ? 'start' : 'middle';
           const rot = e.ang ? ` transform="rotate(${num(e.ang * 180 / Math.PI)} ${num(e.x)} ${num(e.y)})"` : '';
-          parts.push(`<text x="${num(e.x)}" y="${num(e.y)}" fill="${e.col || DIM_COL}" font-family='ui-monospace,Consolas,"Courier New",monospace' font-weight="700" font-size="${num((e.sz || 8) * 1.333)}" text-anchor="${anchor}" dominant-baseline="middle"${rot}>${escapeXML(e.t || '')}</text>`);
+          parts.push(`<text x="${num(e.x)}" y="${num(e.y)}" fill="${e.col || DIM_COL}" font-family='ui-monospace,Consolas,"Courier New",monospace' font-weight="700" font-size="${num((e.sz || 8) * PX_PER_PT)}" text-anchor="${anchor}" dominant-baseline="middle"${rot}>${escapeXML(e.t || '')}</text>`);
           break;
         }
       }
@@ -90,6 +90,7 @@
      Draws the model into `pdf` fitted inside the box (X,Y,W,H) in mm,
      preserving aspect ratio and centring. */
   const MM_PER_PT = 0.352777778;
+  const PX_PER_PT = 4 / 3; // CSS px per typographic pt (96 dpi / 72 pt per inch)
   // Enlarge sketch labels in the PDF relative to their on-canvas size. Sketches
   // are fitted small on the page, so the proportionally-scaled font can come out
   // too faint to read in print; this boosts legibility. The white knockout box
@@ -174,7 +175,7 @@
           // on heavily-fitted sketches — the clamped text overflows its box and
           // looks off-centre/"pushed around". Keep only a tiny floor so the size
           // never hits 0.
-          const pt = Math.max(0.5, (e.sz || 8) * 1.333 * scale / MM_PER_PT) * TEXT_PT_BOOST;
+          const pt = Math.max(0.5, (e.sz || 8) * PX_PER_PT * scale / MM_PER_PT) * TEXT_PT_BOOST;
           pdf.setFontSize(pt);
           pdf.setFont('helvetica', 'bold');
           pdf.setTextColor(r, g, b);
