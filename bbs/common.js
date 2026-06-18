@@ -84,7 +84,16 @@ function buildExportJSON(data) {
   const parts = [];
   for (const [k, v] of Object.entries(data)) {
     if (k === 'rows' && Array.isArray(v)) {
-      const items = v.map(r => '    ' + JSON.stringify(r));
+      const items = v.map(r => {
+        const { shapeVec, shapeHist, ...rest } = r;
+        const extras = [];
+        if (shapeVec  !== undefined) extras.push('"shapeVec": '  + JSON.stringify(shapeVec));
+        if (shapeHist !== undefined) extras.push('"shapeHist": ' + JSON.stringify(shapeHist));
+        if (!extras.length) return '    ' + JSON.stringify(rest);
+        const base = JSON.stringify(rest);
+        return '    ' + base.slice(0, -1) + (base.length > 2 ? ',' : '') +
+               '\n      ' + extras.join(',\n      ') + '}';
+      });
       const body = items.length ? '[\n' + items.join(',\n') + '\n  ]' : '[]';
       parts.push('  ' + JSON.stringify(k) + ': ' + body);
     } else {
