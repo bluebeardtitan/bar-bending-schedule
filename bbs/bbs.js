@@ -781,7 +781,10 @@ $('#exportCSV').addEventListener('click',()=>{
   const blob = new Blob([bom + toCSV()],{type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `bbs_${(projectInfo.project||'schedule').replace(/[^a-z0-9]/gi,'_').toLowerCase()}.csv`;
+  // Cap the export name at 50 chars while preserving the .csv extension
+  let csvName = `bbs_${(projectInfo.project||'schedule').replace(/[^a-z0-9]/gi,'_').toLowerCase()}.csv`;
+  if (csvName.length > 50) csvName = csvName.slice(0, 46) + '.csv';
+  a.download = csvName;
   a.click(); URL.revokeObjectURL(a.href);
 });
 
