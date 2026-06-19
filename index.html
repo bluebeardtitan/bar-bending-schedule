@@ -411,6 +411,27 @@
           </tr></tfoot>
         </table>
       </div>
+      <div id="wastageSummary" class="wastage-summary">
+        <h3>Rebar Wastage <span class="ws-sub">stock bar = 12 m · optimised cutting (FFD), grouped by Ø</span></h3>
+        <div style="overflow:auto">
+          <table id="wastageTable">
+            <thead><tr>
+              <th>Φ (mm)</th><th>Bars</th><th>Stock Bars (12 m)</th>
+              <th>Waste (m)</th><th>Waste (kg)</th><th>Waste %</th>
+            </tr></thead>
+            <tbody id="wastageBody"></tbody>
+            <tfoot><tr>
+              <td class="right">Total:</td>
+              <td></td>
+              <td class="mono right" id="wstStock">0</td>
+              <td class="mono right" id="wstWasteM">0.000</td>
+              <td class="mono right" id="wstWasteKg">0.000</td>
+              <td class="mono right" id="wstPct">0.0%</td>
+            </tr></tfoot>
+          </table>
+        </div>
+        <div id="wstNote" class="ws-note" style="display:none"></div>
+      </div>
     </div>
     <div class="footer">CL values are per-bar. Edit any row with ✏️. Drag rows to reorder.</div>
   </section>
