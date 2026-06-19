@@ -1108,8 +1108,25 @@ let drawerCallback = null;
 let isDrawing      = false;
 let livePts        = [];
 let mousePos       = null;
-let bezierMode     = false;
-let bezierStartIdx = -1;
+let bezierMode     = false;   // current pen mode: true = upcoming segments curve
+let segStyles      = [];      // style of each placed segment i (livePts[i]→livePts[i+1]): 'curve' | 'straight'
+
+/* Group a point list + parallel per-segment style array into runs of consecutive
+   same-style segments. pts.length === styles.length + 1. Adjacent runs share their
+   boundary vertex so curves and straights join seamlessly. */
+function splitStyleRuns(pts, styles) {
+  const runs = [];
+  if (pts.length < 2) return runs;
+  let start = 0;
+  for (let i = 1; i < styles.length; i++) {
+    if (styles[i] !== styles[i-1]) {
+      runs.push({ pts: pts.slice(start, i+1), style: styles[i-1] });
+      start = i;
+    }
+  }
+  runs.push({ pts: pts.slice(start), style: styles[styles.length-1] });
+  return runs;
+}
 
 let dragStart   = null;
 
@@ -1548,19 +1565,17 @@ function renderGhostFrame(cursorPt) {
       const g = makeRebarGroup(pts, getBarSize(), style, false);
       g.opacity(0.6); layer.add(g);
     };
-    // Mirror commitRebarPath's split so the preview is faithful: the leading part
-    // (drawn before B) stays straight, only the trailing part (after B) curves.
-    if (bezierMode && bezierStartIdx >= 1) {
-      addGhost(previewPts.slice(0, bezierStartIdx + 1), 'straight');
-      addGhost(previewPts.slice(bezierStartIdx),         'curve');
-    } else {
-      addGhost(previewPts, 'straight');
-    }
-    // Anchor dots
+    // Mirror commitRebarPath's split so the preview is faithful: each segment keeps
+    // the pen mode it was drawn with; the live segment to the cursor uses current mode.
+    const previewStyles = [...segStyles];
+    if (cursorPt) previewStyles.push(bezierMode ? 'curve' : 'straight');
+    splitStyleRuns(previewPts, previewStyles).forEach(r => addGhost(r.pts, r.style));
+    // Anchor dots — orange where the segment style changes (a mode transition)
     livePts.forEach((p,i) => {
+      const isTransition = i>0 && i<segStyles.length && segStyles[i] !== segStyles[i-1];
       layer.add(new Konva.Circle({
         x:p.x, y:p.y, radius:5,
-        fill: i===0?'#22c55e':(bezierMode&&i===bezierStartIdx)?'#f97316':'#38bdf8',
+        fill: i===0?'#22c55e':isTransition?'#f97316':'#38bdf8',
         stroke:'#fff', strokeWidth:1.5,
       }));
     });
@@ -1663,19 +1678,16 @@ function commitRebarPath() {
   if (livePts.length<2){cancelPath();return;}
   if (activeTool==='ortho-bar') {
     history.push({type:'ortho-bar',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:false,fillet:_orthoFillet});
-  } else if (bezierMode&&bezierStartIdx>=1&&livePts.length>bezierStartIdx) {
-    const sp=livePts.slice(0,bezierStartIdx+1);
-    if(sp.length>=2) history.push({type:'rebar-path',points:sp,diam:getBarSize(),style:activeStyle,closed:false,bezier:false});
-    const bp=livePts.slice(bezierStartIdx);
-    if(bp.length>=2) history.push({type:'rebar-path',points:bp,diam:getBarSize(),style:activeStyle,closed:false,bezier:true});
   } else {
-    history.push({type:'rebar-path',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:false,bezier:false});
+    splitStyleRuns(livePts, segStyles).forEach(r => {
+      if (r.pts.length>=2) history.push({type:'rebar-path',points:r.pts,diam:getBarSize(),style:activeStyle,closed:false,bezier:r.style==='curve'});
+    });
   }
   cancelPath(); redraw();
 }
 
 function cancelPath() {
-  isDrawing=false; livePts=[]; mousePos=null; bezierMode=false; bezierStartIdx=-1;
+  isDrawing=false; livePts=[]; segStyles=[]; mousePos=null; bezierMode=false;
   _lastDownTime=0; _lastDownPt=null;
   updateNodeCounter(0); showPathHint(false); redraw();
 }
@@ -1837,7 +1849,7 @@ function onDown(e) {
   if (isDbl && (activeTool==='rebar-path'||activeTool==='ortho-bar') && isDrawing) {
     /* second click of dblclick: discard the point just added by the first
        mousedown of this pair (it was already pushed), then commit */
-    if (livePts.length > 1) livePts.pop();
+    if (livePts.length > 1) { livePts.pop(); segStyles.pop(); }
     commitRebarPath();
     return;
   }
@@ -1887,19 +1899,23 @@ function onDown(e) {
     return;
   }
   if (activeTool==='rebar-path') {
-    if(!isDrawing){isDrawing=true;livePts=[pt];showPathHint(true);}
+    if(!isDrawing){isDrawing=true;livePts=[pt];segStyles=[];showPathHint(true);}
     else{
       const first=livePts[0],closeThresh=16;
       if(livePts.length>=3&&Math.hypot(pt.x-first.x,pt.y-first.y)<closeThresh){
-        if(bezierMode&&bezierStartIdx>=1&&livePts.length>bezierStartIdx){
-          const sp=livePts.slice(0,bezierStartIdx+1);if(sp.length>=2)history.push({type:'rebar-path',points:sp,diam:getBarSize(),style:activeStyle,closed:false,bezier:false});
-          const bp=[...livePts.slice(bezierStartIdx),livePts[0]];if(bp.length>=2)history.push({type:'rebar-path',points:bp,diam:getBarSize(),style:activeStyle,closed:true,bezier:true});
+        const closePts=[...livePts,livePts[0]];
+        const closeStyles=[...segStyles,bezierMode?'curve':'straight'];
+        const runs=splitStyleRuns(closePts,closeStyles);
+        if(runs.length<=1){
+          // uniform style — keep a true closed path so it smooths/fills correctly
+          history.push({type:'rebar-path',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:true,bezier:runs.length===1&&runs[0].style==='curve'});
         } else {
-          history.push({type:'rebar-path',points:[...livePts],diam:getBarSize(),style:activeStyle,closed:true,bezier:false});
+          runs.forEach(r=>{ if(r.pts.length>=2)history.push({type:'rebar-path',points:r.pts,diam:getBarSize(),style:activeStyle,closed:false,bezier:r.style==='curve'}); });
         }
         cancelPath(); return;
       }
       livePts.push(pt);
+      segStyles.push(bezierMode?'curve':'straight');
     }
     renderGhostFrame(pt); return;
   }
@@ -1986,8 +2002,7 @@ function onKeyDown(e) {
     if(isDrawing)renderGhostFrame(mousePos);else redraw();
   }
   if((e.key==='b'||e.key==='B')&&activeTool==='rebar-path'&&isDrawing){
-    bezierMode=!bezierMode;
-    bezierStartIdx=bezierMode?Math.max(1,livePts.length-2):-1;
+    bezierMode=!bezierMode;   // affects only segments drawn from here on
     renderGhostFrame(mousePos);
   }
 }
@@ -2125,7 +2140,7 @@ function initDrawer() {
   document.addEventListener('keydown', onKeyDown);
 
   history = _pendingHistory || []; _pendingHistory = null;
-  isDrawing=false; livePts=[]; dragStart=null; dimPhase=0; dimPts=[]; mousePos=null; bezierMode=false;
+  isDrawing=false; livePts=[]; segStyles=[]; dragStart=null; dimPhase=0; dimPts=[]; mousePos=null; bezierMode=false;
   editDragCmd=null; editDragIdx=null; editDragging=false; _delHoverIdx=-1;
   redraw();
 
@@ -2164,7 +2179,7 @@ function initDrawer() {
     if(isDrawing) renderGhostFrame(mousePos); else redraw();
   });
   document.getElementById('drawerUndo').onclick=()=>{
-    if(isDrawing&&livePts.length>1){livePts.pop();renderGhostFrame(mousePos);return;}
+    if(isDrawing&&livePts.length>1){livePts.pop();segStyles.pop();renderGhostFrame(mousePos);return;}
     if(isDrawing){cancelPath();return;}
     history.pop(); redraw();
   };
