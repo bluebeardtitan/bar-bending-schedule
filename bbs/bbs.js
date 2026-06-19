@@ -1162,18 +1162,13 @@ $('#printBBS').addEventListener('click', async () => {
       y += 3;
     }
 
-    // ── Table-header row (repeats on every page) — light fill, dark text, no heavy ink ──
+    // ── Table-header row (repeats on every page) — minimal ink, pure black on white ──
     function drawTableHead() {
       const hh = lineH * 2 + 2 * pad;
-      // Very light gray background — barely perceptible on screen, near-zero ink on print
-      pdf.setFillColor(242, 242, 242);
-      pdf.rect(margin, y, usableW, hh, 'F');
       // Thick top rule (table open)
-      pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.5);
+      pdf.setDrawColor(0, 0, 0); pdf.setLineWidth(0.5);
       pdf.line(margin, y, margin + usableW, y);
-      // Thin vertical column separators in the header
-      pdf.setDrawColor(180, 180, 180); pdf.setLineWidth(0.1);
-      cols.slice(1).forEach(c => pdf.line(c.x, y, c.x, y + hh));
+      // Header text bold, dark
       // Header text — bold, dark
       pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
       pdf.setTextColor(0, 0, 0);
@@ -1192,7 +1187,7 @@ $('#printBBS').addEventListener('click', async () => {
         }
       });
       // Thick bottom rule (header / data separator)
-      pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.4);
+      pdf.setDrawColor(0, 0, 0); pdf.setLineWidth(0.3);
       pdf.line(margin, y + hh, margin + usableW, y + hh);
       y += hh;
     }
@@ -1256,16 +1251,8 @@ $('#printBBS').addEventListener('click', async () => {
         pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
       }
 
-      // Alternating row tint — very light, near-invisible on screen, minimal ink on print
-      if (i % 2 === 1) {
-        pdf.setFillColor(248, 248, 248);
-        pdf.rect(margin, y, usableW, rowH, 'F');
-      }
-      // Light vertical column separators
-      pdf.setDrawColor(200, 200, 200); pdf.setLineWidth(0.08);
-      cols.slice(1).forEach(c => pdf.line(c.x, y, c.x, y + rowH));
       // Thin horizontal row bottom rule
-      pdf.setDrawColor(210, 210, 210); pdf.setLineWidth(0.1);
+      pdf.setDrawColor(0, 0, 0); pdf.setLineWidth(0.06);
       pdf.line(margin, y + rowH, margin + usableW, y + rowH);
       pdf.setTextColor(0, 0, 0);
 
@@ -1279,7 +1266,7 @@ $('#printBBS').addEventListener('click', async () => {
         if (model && window.ShapeVector) {
           try { ShapeVector.toPdf(pdf, model, sx, sy, sk.w, sk.h); } catch {}
           // restore table stroke + text state the vector draw clobbered
-          pdf.setLineWidth(0.1); pdf.setDrawColor(210, 210, 210); pdf.setTextColor(0,0,0);
+          pdf.setLineWidth(0.06); pdf.setDrawColor(0, 0, 0); pdf.setTextColor(0,0,0);
           if (pdf.setLineCap) pdf.setLineCap('butt');
           pdf.setFont('helvetica','normal'); pdf.setFontSize(fontSize);
         } else {
@@ -1303,8 +1290,7 @@ $('#printBBS').addEventListener('click', async () => {
     // ── Totals row ──
     const totH = lineH + 2 * pad;
     if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
-    // Thick top rule to open the totals row, then thin bottom rule to close the table
-    pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.4);
+    pdf.setDrawColor(0, 0, 0); pdf.setLineWidth(0.3);
     pdf.line(margin, y, margin + usableW, y);
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
     pdf.setTextColor(0, 0, 0);
@@ -1312,8 +1298,7 @@ $('#printBBS').addEventListener('click', async () => {
     pdf.text('Totals:', margin + labelW - pad, y + pad, { align:'right', baseline:'top' });
     pdf.text(fmt3(sumLen), col('totL').x + col('totL').w - pad, y + pad, { align:'right', baseline:'top' });
     pdf.text(fmt3(sumWt),  col('totW').x + col('totW').w - pad, y + pad, { align:'right', baseline:'top' });
-    // Thick bottom rule to close the table
-    pdf.setDrawColor(60, 60, 60); pdf.setLineWidth(0.5);
+    pdf.setDrawColor(0, 0, 0); pdf.setLineWidth(0.4);
     pdf.line(margin, y + totH, margin + usableW, y + totH);
 
     // ── Page-number footers ──

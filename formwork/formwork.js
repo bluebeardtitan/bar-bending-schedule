@@ -985,9 +985,10 @@ $('#printBBS').addEventListener('click', async () => {
     function drawTableHead(){
       const hh = lineH*2 + 2*pad;
       pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
+      pdf.setDrawColor(0,0,0); pdf.setLineWidth(0.3);
+      pdf.line(margin, y, margin + usableW, y);
       cols.forEach(c => {
-        pdf.setFillColor(0,0,0); pdf.rect(c.x, y, c.w, hh, 'F');
-        pdf.setTextColor(255,255,255);
+        pdf.setTextColor(0,0,0);
         const tl = pdf.splitTextToSize(c.title, c.w - 2*pad);
         const tx = c.align === 'right'  ? c.x + c.w - pad
                  : c.align === 'center' ? c.x + c.w/2
@@ -1000,7 +1001,8 @@ $('#printBBS').addEventListener('click', async () => {
           tl.forEach((ln,i) => pdf.text(ln, tx, y + (hh - n*lineH)/2 + i*lineH, { align:c.align, baseline:'top' }));
         }
       });
-      pdf.setTextColor(0,0,0);
+      pdf.setDrawColor(0,0,0); pdf.setLineWidth(0.2);
+      pdf.line(margin, y + hh, margin + usableW, y + hh);
       y += hh;
     }
 
@@ -1091,7 +1093,7 @@ $('#printBBS').addEventListener('click', async () => {
     if (y + totH > pageH - margin) { pdf.addPage(); y = margin; drawTableHead(); }
     pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize); pdf.setTextColor(0,0,0);
     const labelW = cols.slice(0,10).reduce((a,c)=>a+c.w,0);
-    const totCell = (x,w) => { pdf.setFillColor(255,255,255); pdf.rect(x, y, w, totH, 'FD'); };
+    const totCell = (x,w) => { pdf.rect(x, y, w, totH, 'D'); };
     totCell(margin, labelW);
     pdf.text('Totals:', margin + labelW - pad, y + pad, { align:'right', baseline:'top' });
     totCell(col('vol').x, col('vol').w);

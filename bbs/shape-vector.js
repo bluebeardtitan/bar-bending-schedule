@@ -21,8 +21,8 @@
 (function () {
   'use strict';
 
-  const BAR_COL = '#1f1f1f';
-  const DIM_COL = '#555';
+  const BAR_COL = '#000';
+  const DIM_COL = '#000';
 
   const num = (n) => (Math.round(n * 100) / 100);
 

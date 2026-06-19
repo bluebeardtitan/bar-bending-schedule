@@ -16,12 +16,12 @@ const REBAR_STYLES = [
 function plainLineWidth(diam) { return Math.max(1.5, (diam || 14) * 0.18); }
 
 const GRAY = {
-  body:  '#303030',
+  body:  '#000000',
   hi:    '#ffffff',
-  edge:  '#303030',
-  rib:   '#303030',
+  edge:  '#000000',
+  rib:   '#000000',
   ribHi: '#ffffff',
-  dim:   '#303030',
+  dim:   '#000000',
   bg:    '#ffffff',
 };
 
@@ -2659,7 +2659,7 @@ function exportToPNG() {
    than the ribbed raster look, keeping files tiny. Returns null when the
    drawing can only be produced as a baked raster diagram (generator/iso
    library shapes), so the caller can fall back to exportToPNG(). */
-const DIM_GRAY = '#555';
+const DIM_GRAY = '#000000';
 const PX_PER_PT = 4 / 3; // CSS px per typographic pt (96 dpi / 72 pt per inch)
 
 function _barLW(diam) { return Math.max(2, Math.min(6, (diam || 16) * 0.18)); }
@@ -2781,9 +2781,9 @@ function buildVectorModel() {
           const P0=ext[i], P1=ext[i+1], P2=ext[i+2], P3=ext[i+3]||ext[i+2];
           s.push([P1.x+T*(P2.x-P0.x), P1.y+T*(P2.y-P0.y), P2.x-T*(P3.x-P1.x), P2.y-T*(P3.y-P1.y), P2.x, P2.y]);
         }
-        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#1f1f1f', lw });
+        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#000000', lw });
       } else {
-        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#000000', lw });
       }
     } else if (cmd.type === 'ortho-bar') {
       const pts = cmd.points || [];
@@ -2791,12 +2791,12 @@ function buildVectorModel() {
       const fillet = cmd.fillet != null ? cmd.fillet : 0;
       const barPts = cmd.closed ? [...pts, pts[0]] : pts;
       const { samples } = buildOrthoGeometry(barPts, d, fillet);
-      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#1f1f1f', lw });
+      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#000000', lw });
     } else if (cmd.type === 'rect') {
       const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
-      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#1f1f1f', lw });
+      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#000000', lw });
     } else if (cmd.type === 'circle') {
-      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
+      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#000000', lw });
     } else if (cmd.type === 'text') {
       el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*PT_TO_PX*0.5, t:cmd.text||'', sz: cmd.size||13, col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
@@ -2879,7 +2879,7 @@ function _emitTexturedBar(el, samples, diam, styleId, closed) {
   const simp = _simplify(samples, 1.5);
   const line = simp.map(s => [rnd(s.x), rnd(s.y)]);
   /* No-texture style: a single flat centreline, no body/sheen/ribs. */
-  if (cfg.line) { el.push({ k:'path', d:line, cl:closed, col:'#1f1f1f', lw:_barLW(d) }); return; }
+  if (cfg.line) { el.push({ k:'path', d:line, cl:closed, col:'#000000', lw:_barLW(d) }); return; }
   el.push({ k:'path', d:line, cl:closed, col:GRAY.body, lw:d });                                  // body
   el.push({ k:'path', d:simp.map(s => [rnd(s.x), rnd(s.y - d*0.32)]), cl:closed, col:GRAY.hi, lw:d*0.28 }); // sheen
   if (cfg.ribSpacing > 0 && d >= 5) _emitRibs(el, samples, d, cfg);                                // ribs
@@ -2963,9 +2963,9 @@ function buildVectorModelFrom(hist) {
           const P0=ext[i], P1=ext[i+1], P2=ext[i+2], P3=ext[i+3]||ext[i+2];
           s.push([P1.x+T*(P2.x-P0.x), P1.y+T*(P2.y-P0.y), P2.x-T*(P3.x-P1.x), P2.y-T*(P3.y-P1.y), P2.x, P2.y]);
         }
-        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#1f1f1f', lw });
+        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#000000', lw });
       } else {
-        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#1f1f1f', lw });
+        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#000000', lw });
       }
     } else if (cmd.type === 'ortho-bar') {
       const pts = cmd.points || [];
@@ -2973,12 +2973,12 @@ function buildVectorModelFrom(hist) {
       const fillet = cmd.fillet != null ? cmd.fillet : 0;
       const barPts = cmd.closed ? [...pts, pts[0]] : pts;
       const { samples } = buildOrthoGeometry(barPts, d, fillet);
-      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#1f1f1f', lw });
+      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#000000', lw });
     } else if (cmd.type === 'rect') {
       const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
-      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#1f1f1f', lw });
+      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#000000', lw });
     } else if (cmd.type === 'circle') {
-      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
+      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#000000', lw });
     } else if (cmd.type === 'text') {
       el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*PT_TO_PX*0.5, t:cmd.text||'', sz: cmd.size||13, col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
