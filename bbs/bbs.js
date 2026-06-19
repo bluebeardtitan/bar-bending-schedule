@@ -944,7 +944,7 @@ $('#importCSV').addEventListener('click', () => {
 $('#saveJSON').addEventListener('click',()=>{
   const now = new Date();
   const ts  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`;
-  const blob = new Blob([buildExportJSON({rows,settings,projectInfo})],{type:'application/json'});
+  const blob = new Blob([buildExportJSON({version:2,rows,settings,projectInfo})],{type:'application/json'});
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
   a.download = `bbs_${ts}.json`;
@@ -961,6 +961,18 @@ $('#loadJSON').addEventListener('click',()=>{
         const data=JSON.parse(fr.result);
         if(Array.isArray(data.rows))   {
           rows = data.rows; editIndex=-1;
+          // Migrate old-format JSON (version < 2) where size was in canvas-px, not pt.
+          if ((data.version || 1) < 2) {
+            const _ptpx = 96 / 72;
+            for (const r of rows) {
+              if (!r.shapeHist) continue;
+              for (const cmd of r.shapeHist) {
+                if (cmd.size != null && (cmd.type === 'text' || cmd.type === 'dim-aligned' || cmd.type === 'dim-angular' || cmd.type === 'dim-leader')) {
+                  cmd.size = Math.round(cmd.size / _ptpx);
+                }
+              }
+            }
+          }
           if (window.ShapeDrawer && ShapeDrawer.buildVectorModelFrom) {
             for (const r of rows) {
               if (r.shapeHist && !r.shapeVec) {
@@ -1216,17 +1228,6 @@ $('#printBBS').addEventListener('click', async () => {
       let model = null;
       if (pdfTextured && r.shapeHist && window.ShapeDrawer && ShapeDrawer.buildTexturedModel) {
         try { model = ShapeDrawer.buildTexturedModel(r.shapeHist); } catch {}
-        // The textured model re-creates text from scratch (sz: cmd.size||13),
-        // discarding any manual sz edits the user made in the vector model.
-        // Carry over the original sz values so JSON-level edits take effect.
-        // Match by index among text-only elements: both models are built from
-        // the same shapeHist in order, so positional proximity can be wrong
-        // when size was changed after shapeVec was last saved.
-        if (model && model.el && r.shapeVec && r.shapeVec.el) {
-          const vecTexts = r.shapeVec.el.filter(e => e.k === 'text' && e.sz);
-          const modTexts = model.el.filter(e => e.k === 'text');
-          vecTexts.forEach((oe, i) => { if (modTexts[i]) modTexts[i].sz = oe.sz; });
-        }
       }
       if (!model && r.shapeVec && r.shapeVec.vb) model = r.shapeVec;
 
@@ -1409,6 +1410,11 @@ async function initPage() {
     AppDB.get('bbs_page').then(v => Number(v) || 1),
   ]);
   projectInfo = await loadInfo();
+
+  // One-time migration: shapeHist text/dim `size` was stored in canvas-px;
+  // now stored in typographic-pt so JSON editing is intuitive (matches slider).
+  await migrateShapeHistSizePt();
+
   applyInfoToForm();
   updatePrintMeta();
   applySettingsToForm();
@@ -1422,6 +1428,24 @@ async function initPage() {
     theme: { light: { icon: '🔩', label: 'Rust' }, dark: { icon: '⚙️', label: 'Steel' } },
   });
   render();
+}
+
+async function migrateShapeHistSizePt() {
+  const done = await AppDB.get('bbs_shapehist_pt_migrated');
+  if (done) return;
+  const PT_TO_PX = 96 / 72;
+  let changed = false;
+  for (const r of rows) {
+    if (!r.shapeHist) continue;
+    for (const cmd of r.shapeHist) {
+      if (cmd.size != null && (cmd.type === 'text' || cmd.type === 'dim-aligned' || cmd.type === 'dim-angular' || cmd.type === 'dim-leader')) {
+        cmd.size = Math.round(cmd.size / PT_TO_PX);
+        changed = true;
+      }
+    }
+  }
+  if (changed) await AppDB.set('bbs_rows', rows);
+  await AppDB.set('bbs_shapehist_pt_migrated', true);
 }
 initPage();
 

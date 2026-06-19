@@ -1150,13 +1150,15 @@ window._drawerActiveStyle = 'tor';
 let _stageW = 700, _stageH = 460;
 
 function getBarSize()  { return parseInt(document.getElementById('drawerBarSize').value, 10); }
-/* Font slider is authored in POINTS (min 8pt); every renderer/exporter works in
-   pixels, so convert once here at the UI boundary.
+/* Font slider is authored in POINTS (min 8pt). shapeHist stores size in POINTS
+   so JSON editing is intuitive. Canvas/Konva renderers need pixels — multiply by
+   PT_TO_PX at render call sites.
    CSS reference: 1pt = 1/72in, 1px = 1/96in ⇒ 1pt = 96/72 px. */
 const PT_TO_PX = 96 / 72;
+/* Default dim label size in pt (≈ DIM_BASE canvas-px / PT_TO_PX). */
+const DIM_BASE_PT = 8;
 function getFontSize() {
-  const pt = parseInt(document.getElementById('drawerFontSize').value, 10) || 8;
-  return Math.round(pt * PT_TO_PX * 10) / 10;
+  return parseInt(document.getElementById('drawerFontSize').value, 10) || 8;
 }
 /* Which side of an aligned dimension line its label sits on: above | on | below. */
 function getLabelPos() {
@@ -1186,7 +1188,7 @@ function buildShapeDefinition(meta) {
   const rawSegments = [], rawDims = [], rawTexts = [];
   for (const cmd of history) {
     if (cmd.type === 'text') {
-      rawTexts.push({ x:cmd.x, y:cmd.y, text:cmd.text||'', size:cmd.size });
+      rawTexts.push({ x:cmd.x, y:cmd.y, text:cmd.text||'', size:cmd.size!=null?cmd.size*PT_TO_PX:undefined });
       continue;
     }
     if (cmd.type === 'rebar-path') {
@@ -1202,13 +1204,13 @@ function buildShapeDefinition(meta) {
       for(let i=0;i<steps;i++){const a=i/steps*Math.PI*2; pts.push({x:cmd.cx+Math.cos(a)*cmd.rx,y:cmd.cy+Math.sin(a)*cmd.ry});}
       rawSegments.push({pts,style:'curve',closed:true});
     } else if (cmd.type === 'dim-aligned') {
-      rawDims.push({ kind:'aligned', pts:[{x:cmd.p1.x,y:cmd.p1.y},{x:cmd.p2.x,y:cmd.p2.y}], offset:cmd.offset, label:cmd.label||'', size:cmd.size, pos:cmd.pos });
+      rawDims.push({ kind:'aligned', pts:[{x:cmd.p1.x,y:cmd.p1.y},{x:cmd.p2.x,y:cmd.p2.y}], offset:cmd.offset, label:cmd.label||'', size:cmd.size!=null?cmd.size*PT_TO_PX:undefined, pos:cmd.pos });
     } else if (cmd.type === 'dim-angular') {
-      rawDims.push({ kind:'angular', pts:[{x:cmd.vertex.x,y:cmd.vertex.y},{x:cmd.ptA.x,y:cmd.ptA.y},{x:cmd.ptB.x,y:cmd.ptB.y}], label:cmd.label||'', size:cmd.size });
+      rawDims.push({ kind:'angular', pts:[{x:cmd.vertex.x,y:cmd.vertex.y},{x:cmd.ptA.x,y:cmd.ptA.y},{x:cmd.ptB.x,y:cmd.ptB.y}], label:cmd.label||'', size:cmd.size!=null?cmd.size*PT_TO_PX:undefined });
     } else if (cmd.type === 'dim-leader') {
       const lp=[{x:cmd.origin.x,y:cmd.origin.y},{x:cmd.elbow.x,y:cmd.elbow.y}];
       if(cmd.textPt) lp.push({x:cmd.textPt.x,y:cmd.textPt.y});
-      rawDims.push({ kind:'leader', pts:lp, label:cmd.label||'', size:cmd.size });
+      rawDims.push({ kind:'leader', pts:lp, label:cmd.label||'', size:cmd.size!=null?cmd.size*PT_TO_PX:undefined });
     }
   }
   if (!rawSegments.length) return { error:'Nothing to export — draw at least one bar segment first.' };
@@ -1492,7 +1494,7 @@ function renderCmd(cmd, layer) {
   } else if (cmd.type === 'text') {
     layer.add(new Konva.Text({
       x:cmd.x, y:cmd.y,
-      text:cmd.text, fontSize:cmd.size||13,
+      text:cmd.text, fontSize:(cmd.size||13)*PT_TO_PX,
       fontFamily:'ui-monospace,Consolas,monospace', fontStyle:'bold',
       fill:GRAY.dim,
     }));
@@ -1501,7 +1503,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot(), cmd.size, cmd.pos);
+        drawDimAligned(c, cmd.p1, cmd.p2, cmd.offset, cmd.label||getAnnot(), (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
       }, listening: false,
     }));
 
@@ -1509,7 +1511,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
+        drawDimAngular(c, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
       }, listening: false,
     }));
 
@@ -1517,7 +1519,7 @@ function renderCmd(cmd, layer) {
     layer.add(new Konva.Shape({
       sceneFunc(ctx) {
         const c = ctx._context||ctx;
-        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot(), cmd.size, cmd.pos);
+        drawDimLeader(c, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||getAnnot(), (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
       }, listening: false,
     }));
 
@@ -1605,7 +1607,7 @@ function renderGhostFrame(cursorPt) {
       : -30;
     layer.add(new Konva.Shape({
       opacity: 0.6,
-      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot(), getFontSize(), getLabelPos()); },
+      sceneFunc(ctx) { drawDimAligned(ctx._context||ctx, p1, p2, offset, getAnnot(), getFontSize()*PT_TO_PX, getLabelPos()); },
       listening: false,
     }));
     // Anchor dots
@@ -1620,7 +1622,7 @@ function renderGhostFrame(cursorPt) {
     if (ptB) {
       layer.add(new Konva.Shape({
         opacity: 0.6,
-        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot(), getFontSize(), getLabelPos()); },
+        sceneFunc(ctx) { drawDimAngular(ctx._context||ctx, vertex, ptA, ptB, getAnnot(), getFontSize()*PT_TO_PX, getLabelPos()); },
         listening: false,
       }));
     } else {
@@ -1636,7 +1638,7 @@ function renderGhostFrame(cursorPt) {
     const textPt = dimPhase === 2 ? cursorPt : null;
     layer.add(new Konva.Shape({
       opacity: 0.6,
-      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot(), getFontSize(), getLabelPos()); },
+      sceneFunc(ctx) { drawDimLeader(ctx._context||ctx, origin, elbow, textPt, getAnnot(), getFontSize()*PT_TO_PX, getLabelPos()); },
       listening: false,
     }));
     dimPts.forEach(p => layer.add(new Konva.Circle({x:p.x,y:p.y,radius:4,fill:'#38bdf8',stroke:'#fff',strokeWidth:1.5})));
@@ -1765,8 +1767,8 @@ function _cmdHit(cmd, pt) {
     return samples.length ? _minDistToPolyline(pt, samples) < Math.max(10, d/2 + 8) : false;
   }
   if (cmd.type==='text') {
-    const fs = cmd.size || 13, w = (cmd.text||'').length * fs * 0.6 + 6;
-    return pt.x >= cmd.x-4 && pt.x <= cmd.x + w && pt.y >= cmd.y-4 && pt.y <= cmd.y + fs*1.6 + 4;
+    const fsPx = (cmd.size || 13) * PT_TO_PX, w = (cmd.text||'').length * fsPx * 0.6 + 6;
+    return pt.x >= cmd.x-4 && pt.x <= cmd.x + w && pt.y >= cmd.y-4 && pt.y <= cmd.y + fsPx*1.6 + 4;
   }
   if (cmd.type==='dim-aligned')
     return near(cmd.p1,14) || near(cmd.p2,14) || _distToSeg(pt.x,pt.y,cmd.p1.x,cmd.p1.y,cmd.p2.x,cmd.p2.y) < 10;
@@ -2519,10 +2521,11 @@ function shapeDefToCommands(def, diam, style){
   if(!cmds.length) return null;
   (def.dims||[]).forEach(dm=>{
     const sizePx = dm.size!=null ? dm.size*scale : undefined;
+    const sizePt = sizePx != null ? Math.round(sizePx / PT_TO_PX) : undefined;
     if(dm.type==='angular'){
-      cmds.push({ type:'dim-angular', vertex:mapPt(dm.vertex), ptA:mapPt(dm.a), ptB:mapPt(dm.b), label:dm.label||'', size:sizePx });
+      cmds.push({ type:'dim-angular', vertex:mapPt(dm.vertex), ptA:mapPt(dm.a), ptB:mapPt(dm.b), label:dm.label||'', size:sizePt });
     } else if(dm.type==='leader'){
-      cmds.push({ type:'dim-leader', origin:mapPt(dm.origin), elbow:mapPt(dm.elbow), textPt:dm.text?mapPt(dm.text):null, label:dm.label||'', size:sizePx });
+      cmds.push({ type:'dim-leader', origin:mapPt(dm.origin), elbow:mapPt(dm.elbow), textPt:dm.text?mapPt(dm.text):null, label:dm.label||'', size:sizePt });
     } else {
       const a=mapPt(dm.from), b=mapPt(dm.to);
       let offset;
@@ -2533,13 +2536,13 @@ function shapeDefToCommands(def, diam, style){
         const off=dm.off||[0,0], dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1;
         offset=off[0]*(-dy/len)+off[1]*(dx/len);
       }
-      cmds.push({ type:'dim-aligned', p1:a, p2:b, offset, label:dm.label||'', size:sizePx, pos:dm.pos });
+      cmds.push({ type:'dim-aligned', p1:a, p2:b, offset, label:dm.label||'', size:sizePt, pos:dm.pos });
     }
   });
   (def.texts||[]).forEach(t=>{
     if(t.x==null) return;
     const p=mapPt([t.x,t.y]);
-    cmds.push({ type:'text', x:p.x, y:p.y, text:t.label||'', size: t.size!=null ? t.size*scale : getFontSize() });
+    cmds.push({ type:'text', x:p.x, y:p.y, text:t.label||'', size: t.size!=null ? Math.round(t.size*scale/PT_TO_PX) : getFontSize() });
   });
   return cmds;
 }
@@ -2590,8 +2593,8 @@ function computeHistoryBounds(hist = history) {
     } else if (cmd.type==='circle') {
       grow(cmd.cx-cmd.rx-r,cmd.cy-cmd.ry-r); grow(cmd.cx+cmd.rx+r,cmd.cy+cmd.ry+r);
     } else if (cmd.type==='text') {
-      const fs=cmd.size||13;
-      grow(cmd.x-4,cmd.y-4); grow(cmd.x+(cmd.text||'').length*fs*0.65+8,cmd.y+fs*1.6+4);
+      const fsPx=(cmd.size||13)*PT_TO_PX;
+      grow(cmd.x-4,cmd.y-4); grow(cmd.x+(cmd.text||'').length*fsPx*0.65+8,cmd.y+fsPx*1.6+4);
     } else if (cmd.type==='dim-aligned') {
       const off=Math.abs(cmd.offset||28);
       const dx=cmd.p2.x-cmd.p1.x, dy=cmd.p2.y-cmd.p1.y;
@@ -2795,13 +2798,13 @@ function buildVectorModel() {
     } else if (cmd.type === 'circle') {
       el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
     } else if (cmd.type === 'text') {
-      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz: Math.round((cmd.size||13) / PX_PER_PT), col:DIM_GRAY, anchor:'l' });
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*PT_TO_PX*0.5, t:cmd.text||'', sz: cmd.size||13, col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
-      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size, cmd.pos);
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     }
   }
   if (!el.length) return null;
@@ -2920,13 +2923,13 @@ function buildTexturedModel(hist) {
       const closed = cmd.type==='rect' ? true : !!cmd.closed;
       _emitTexturedBar(el, samples, d, cmd.style || activeStyle, closed);
     } else if (cmd.type === 'text') {
-      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz: Math.round((cmd.size||13) / PX_PER_PT), col:DIM_GRAY, anchor:'l' });
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*PT_TO_PX*0.5, t:cmd.text||'', sz: cmd.size||13, col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
-      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size, cmd.pos);
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     }
   }
   if (!el.length) return null;
@@ -2977,13 +2980,13 @@ function buildVectorModelFrom(hist) {
     } else if (cmd.type === 'circle') {
       el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#1f1f1f', lw });
     } else if (cmd.type === 'text') {
-      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*0.5, t:cmd.text||'', sz: Math.round((cmd.size||13) / PX_PER_PT), col:DIM_GRAY, anchor:'l' });
+      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*PT_TO_PX*0.5, t:cmd.text||'', sz: cmd.size||13, col:DIM_GRAY, anchor:'l' });
     } else if (cmd.type === 'dim-aligned') {
-      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', cmd.size, cmd.pos);
+      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', cmd.size, cmd.pos);
+      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', cmd.size, cmd.pos);
+      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
     }
   }
   if (!el.length) return null;
