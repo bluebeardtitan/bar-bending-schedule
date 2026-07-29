@@ -1,15 +1,17 @@
-/* Google Drive sync — OAuth2 + Drive API v3
-   Uses Google Identity Services (GIS) loaded from accounts.google.com/gsi/client.
-   Client ID is base64-encoded to reduce visual scanning surface. */
+/* Google Drive sync — OAuth2 implicit grant (redirect flow) + Drive API v3
+   Uses a full-page redirect to Google for auth (no popup), then returns to the
+   same page with the access token in the URL fragment.  Token is cached in
+   localStorage across page reloads (same key scheme as scheme-database). */
 (function () {
   'use strict';
 
   var CLIENT_ID_B64 = 'MTA2NzA3NTQ5NTIwMC1wMGhhdXJuanRwMzJvZm51YWVuNzQ5NzBybDN1OHY1di5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==';
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
+  var TOKEN_KEY = 'bbs_gdrive_token';
+  var EXPIRY_KEY = 'bbs_gdrive_token_expiry';
   var MAK_FOLDER = 'MAK-Projects';
   var BBS_FOLDER = 'Bar-Bending-Schedule-Backups';
 
-  var tokenClient = null;
   var accessToken = null;
 
   function decode() {
@@ -22,50 +24,74 @@
     }));
   }
 
-  /* Acquire an OAuth token. GIS opens a popup if no cached token exists.
-     Must be called synchronously within a user-gesture event (click) so the
-     browser does not block the popup. */
-  function acquireToken() {
-    if (!tokenClient) {
-      var id = decode();
-      if (!id || typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2)
-        return Promise.reject(new Error('Google Identity Services not loaded.'));
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: id,
-        scope: SCOPES,
-      });
-    }
-    return new Promise(function (resolve, reject) {
-      tokenClient.callback = function (resp) {
-        if (resp.error) { reject(new Error(resp.error)); return; }
-        if (!resp.access_token) { reject(new Error('No access token received')); return; }
-        accessToken = resp.access_token;
-        resolve();
-      };
-      // GIS will show a popup if no cached token is available
-      tokenClient.requestAccessToken();
-    });
+  /* ──────── OAuth redirect flow ──────── */
+
+  function getRedirectUri() {
+    return window.location.origin + window.location.pathname;
   }
 
-  /* Verify the current token is still valid, or acquire a new one.
-     On first call (no token) the GIS popup opens synchronously within the
-     caller's user-gesture context, so the browser does not block it.
-     On subsequent calls the cached token is reused silently. */
-  function ensureToken() {
-    if (accessToken) {
-      return api('https://www.googleapis.com/drive/v3/about?fields=user').then(function (r) {
-        if (r.ok) return;
-        accessToken = null;
-        return acquireToken();
-      });
+  /* Initiate Google OAuth — redirects the page to Google's consent screen. */
+  function oauthSignIn() {
+    var clientId = decode();
+    if (!clientId) { alert('Invalid client ID configuration.'); return; }
+    var form = document.createElement('form');
+    form.setAttribute('method', 'GET');
+    form.setAttribute('action', 'https://accounts.google.com/o/oauth2/v2/auth');
+    var params = {
+      client_id: clientId,
+      redirect_uri: getRedirectUri(),
+      response_type: 'token',
+      scope: SCOPES,
+      include_granted_scopes: 'true',
+      prompt: 'consent',
+    };
+    for (var p in params) {
+      var input = document.createElement('input');
+      input.setAttribute('type', 'hidden');
+      input.setAttribute('name', p);
+      input.setAttribute('value', params[p]);
+      form.appendChild(input);
     }
-    return acquireToken();
+    document.body.appendChild(form);
+    form.submit();
   }
 
-  /* Find or create a folder by name, optionally under a parent.
-     @param name     folder name
-     @param parentId optional parent folder ID
-     @return Promise<string> folder ID */
+  /* Extract token from URL fragment after OAuth redirect. */
+  function extractTokenFromHash() {
+    var hash = window.location.hash;
+    if (!hash || !hash.includes('access_token')) return false;
+    var params = new URLSearchParams(hash.substring(1));
+    var token = params.get('access_token');
+    var expiresIn = parseInt(params.get('expires_in') || '3600', 10);
+    if (token) {
+      var expiry = Date.now() + (expiresIn - 60) * 1000;
+      try {
+        localStorage.setItem(TOKEN_KEY, token);
+        localStorage.setItem(EXPIRY_KEY, String(expiry));
+      } catch (e) { /* localStorage may be unavailable */ }
+      accessToken = token;
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return true;
+    }
+    return false;
+  }
+
+  /* Load a previously cached token from localStorage. */
+  function loadCachedToken() {
+    if (accessToken) return true;
+    try {
+      var token = localStorage.getItem(TOKEN_KEY);
+      var expiry = parseInt(localStorage.getItem(EXPIRY_KEY) || '0', 10);
+      if (token && expiry > Date.now()) {
+        accessToken = token;
+        return true;
+      }
+    } catch (e) { /* ignore */ }
+    return false;
+  }
+
+  /* ──────── Folder helpers ──────── */
+
   function ensureFolder(name, parentId) {
     var esc = name.replace(/'/g, "\\'");
     var parts = "name='" + esc + "' and mimeType='application/vnd.google-apps.folder' and trashed=false";
@@ -84,16 +110,12 @@
       });
   }
 
-  /* Ensure MAK-Projects/Bar-Bending-Schedule-Backups exists and return its ID. */
   function ensureBackupsRoot() {
     return ensureFolder(MAK_FOLDER).then(function (makId) {
       return ensureFolder(BBS_FOLDER, makId);
     });
   }
 
-  /* Find or create a subfolder under parentId.
-     @param uuid   unique folder name (UUID)
-     @param projName  human-readable project name (stored as folder property) */
   function ensureProjectFolder(parentId, uuid, projName) {
     var esc = uuid.replace(/'/g, "\\'");
     var q = encodeURIComponent("name='" + esc + "' and '" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
@@ -113,8 +135,8 @@
       });
   }
 
-  /* Create a file with metadata, then upload content.
-     Two-step approach is more reliable than multipart for setting parents. */
+  /* ──────── Upload ──────── */
+
   function createThenUpload(fileName, folderId, jsonStr) {
     return api('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
@@ -135,7 +157,8 @@
     });
   }
 
-  /* ──────── Shared dialog helpers ──────── */
+  /* ──────── Dialog helpers ──────── */
+
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -188,56 +211,69 @@
     });
   }
 
-  /* ──────── Project picker dialog ──────── */
   function pickProject(projects) {
-    if (!projects || !projects.length)
-      return Promise.reject(new Error('no projects'));
-    return showDialog(
-      'Restore from Google Drive',
-      'Select a project to restore:',
-      projects,
-      function (p) {
-        var displayName = p.projectName || p.name || 'Unknown';
-        var uuid = p.name || '';
-        var count = p.fileCount != null ? ' (' + p.fileCount + ' backup' + (p.fileCount === 1 ? '' : 's') + ')' : '';
-        return '<button type="button" data-drive-val="' + p.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
-          '<span style="font-weight:600">' + escapeHtml(displayName) + '</span>' +
-          '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(uuid) + ' · ' + escapeHtml(count) + '</span>' +
-        '</button>';
-      }
-    );
+    if (!projects || !projects.length) return Promise.reject(new Error('no projects'));
+    return showDialog('Restore from Google Drive', 'Select a project to restore:', projects, function (p) {
+      var displayName = p.projectName || p.name || 'Unknown';
+      var uuid = p.name || '';
+      var count = p.fileCount != null ? ' (' + p.fileCount + ' backup' + (p.fileCount === 1 ? '' : 's') + ')' : '';
+      return '<button type="button" data-drive-val="' + p.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
+        '<span style="font-weight:600">' + escapeHtml(displayName) + '</span>' +
+        '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(uuid) + ' · ' + escapeHtml(count) + '</span>' +
+      '</button>';
+    });
   }
 
-  /* ──────── Backup file picker dialog ──────── */
   function pickFile(files) {
-    if (!files || !files.length)
-      return Promise.reject(new Error('no backups'));
-    return showDialog(
-      'Select Backup',
-      'Choose a backup to restore:',
-      files,
-      function (f) {
-        var name = f.name || 'unknown';
-        var time = f.createdTime ? fmtDate(f.createdTime) : '';
-        return '<button type="button" data-drive-val="' + f.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
-          '<span style="font-weight:600">' + escapeHtml(name) + '</span>' +
-          (time ? '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(time) + '</span>' : '') +
-        '</button>';
-      }
-    );
+    if (!files || !files.length) return Promise.reject(new Error('no backups'));
+    return showDialog('Select Backup', 'Choose a backup to restore:', files, function (f) {
+      var name = f.name || 'unknown';
+      var time = f.createdTime ? fmtDate(f.createdTime) : '';
+      return '<button type="button" data-drive-val="' + f.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
+        '<span style="font-weight:600">' + escapeHtml(name) + '</span>' +
+        (time ? '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(time) + '</span>' : '') +
+      '</button>';
+    });
   }
 
   /* ────────────── Public API ────────────── */
 
   window.GoogleDrive = {
-    /* Save a JSON-serialisable object to Drive under MAK-Projects/Bar-Bending-Schedule-Backups/<uuid>.
-       @param label       e.g. "bbs" or "cfs"
-       @param data        the object to serialise
-       @param uuid        unique folder name (UUID v4)
-       @param projectName human-readable project name (stored as folder property)
-       @return Promise<string> — the saved file name */
+    /* Init — call once on page load. Extracts token from redirect hash and
+       loads any cached token from localStorage. Returns true if a valid token
+       is now available. */
+    init: function () {
+      if (extractTokenFromHash()) return true;
+      return loadCachedToken();
+    },
+
+    /* Check whether a valid token exists (local check, no network call). */
+    isSignedIn: function () {
+      return !!accessToken;
+    },
+
+    /* Authorize: if a cached token exists and is fresh, resolve immediately.
+       Otherwise redirect to Google for consent.  This never returns to the
+       calling code — the page navigates away. */
+    requestAuth: function () {
+      if (loadCachedToken()) return Promise.resolve();
+      oauthSignIn();
+      return new Promise(function () {}); // never resolves — page redirects
+    },
+
+    /* Disconnect: clear cached token. */
+    signOut: function () {
+      accessToken = null;
+      try {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(EXPIRY_KEY);
+      } catch (e) { /* ignore */ }
+      return Promise.resolve();
+    },
+
+    /* Save data to Drive under MAK-Projects/Bar-Bending-Schedule-Backups/<uuid>. */
     save: function (label, data, uuid, projectName) {
-      return ensureToken().then(function () { return ensureBackupsRoot(); }).then(function (rootId) {
+      return ensureBackupsRoot().then(function (rootId) {
         return ensureProjectFolder(rootId, uuid, projectName || 'Unnamed Project');
       }).then(function (folderId) {
         var now = new Date();
@@ -251,10 +287,9 @@
       });
     },
 
-    /* List project subfolders under Bar-Bending-Schedule-Backups.
-       @return Promise<Array<{id,name,projectName,createdTime,fileCount}>> */
+    /* List project subfolders under Bar-Bending-Schedule-Backups. */
     listProjects: function () {
-      return ensureToken().then(function () { return ensureBackupsRoot(); }).then(function (rootId) {
+      return ensureBackupsRoot().then(function (rootId) {
         var q = encodeURIComponent("'" + rootId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
         return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,properties,createdTime)&orderBy=name')
           .then(function (r) { return r.json(); });
@@ -271,61 +306,26 @@
       });
     },
 
-    /* List backup files in a project folder.
-       @param folderId  the project subfolder ID
-       @return Promise<Array<{id,name,createdTime}>> */
+    /* List backup files in a project folder. */
     listBackups: function (folderId) {
-      return ensureToken().then(function () {
-        var q = encodeURIComponent("'" + folderId + "' in parents and trashed=false");
-        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=createdTime%20desc')
-          .then(function (r) { return r.json(); });
-      }).then(function (data) { return data.files || []; });
+      var q = encodeURIComponent("'" + folderId + "' in parents and trashed=false");
+      return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=createdTime%20desc')
+        .then(function (r) { return r.json(); }).then(function (data) { return data.files || []; });
     },
 
     /* Download a backup and parse as JSON. */
     load: function (fileId) {
-      return ensureToken().then(function () {
-        return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media').then(function (r) { return r.text(); });
-      }).then(function (text) { return JSON.parse(text); });
+      return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media')
+        .then(function (r) { return r.text(); }).then(function (text) { return JSON.parse(text); });
     },
 
     /* Delete a backup file. */
     'delete': function (fileId) {
-      return ensureToken().then(function () {
-        return api('https://www.googleapis.com/drive/v3/files/' + fileId, { method: 'DELETE' });
-      });
+      return api('https://www.googleapis.com/drive/v3/files/' + fileId, { method: 'DELETE' });
     },
 
-    /* Show a project picker dialog. Returns Promise<string> — the selected folderId.
-       Rejects with 'canceled' if user cancels. */
-    pickProject: function (projects) {
-      return pickProject(projects);
-    },
-
-    /* Show a file picker dialog. Returns Promise<string> — the selected fileId.
-       Rejects with 'canceled' if user cancels. */
-    pickFile: function (files) {
-      return pickFile(files);
-    },
-
-    /* Request OAuth authorization explicitly. Triggers the GIS popup if needed.
-       Call this directly from a click handler to ensure the popup isn't blocked. */
-    requestAuth: function () {
-      return ensureToken();
-    },
-
-    /* Revoke the current token. */
-    signOut: function () {
-      if (!accessToken) return Promise.resolve();
-      return fetch('https://oauth2.googleapis.com/revoke?token=' + accessToken, { method: 'POST' }).then(function () {
-        accessToken = null;
-      }).catch(function () { accessToken = null; });
-    },
-
-    /* Check whether a valid token exists. */
-    isSignedIn: function () {
-      if (!accessToken) return Promise.resolve(false);
-      return api('https://www.googleapis.com/drive/v3/about?fields=user').then(function (r) { return r.ok; }).catch(function () { return false; });
-    },
+    /* Dialog pickers. */
+    pickProject: function (projects) { return pickProject(projects); },
+    pickFile: function (files) { return pickFile(files); },
   };
 })();

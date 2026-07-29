@@ -1210,6 +1210,7 @@ async function initPage() {
     AppDB.get('cfs_page').then(v => Number(v) || 1),
   ]);
   projectInfo = await loadInfo();
+  GoogleDrive.init();
   applyInfoToForm();
   updatePrintMeta();
   applySettingsToForm();

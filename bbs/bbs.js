@@ -1555,6 +1555,7 @@ async function initPage() {
     AppDB.get('bbs_page').then(v => Number(v) || 1),
   ]);
   projectInfo = await loadInfo();
+  GoogleDrive.init();
 
   // One-time migration: shapeHist text/dim `size` was stored in canvas-px;
   // now stored in typographic-pt so JSON editing is intuitive (matches slider).
