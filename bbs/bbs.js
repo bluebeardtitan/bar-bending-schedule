@@ -1630,6 +1630,8 @@ if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
       projectInfo.projectUuid = uuid;
       saveInfoToStorage();
     }
+    feedback('⏳ Authorizing with Google…', 'ok');
+    await GoogleDrive.requestAuth();
     feedback('⏳ Syncing to Google Drive…', 'ok');
     const data = { tool: 'bbs', version: 2, rows, settings, projectInfo };
     const name = await GoogleDrive.save('bbs', data, uuid, projName);
@@ -1641,6 +1643,8 @@ if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
 if ($('#driveRestore')) $('#driveRestore').addEventListener('click', async () => {
   try {
     closeToolbarMenus();
+    feedback('⏳ Authorizing with Google…', 'ok');
+    await GoogleDrive.requestAuth();
     feedback('⏳ Fetching project list from Drive…', 'ok');
     const projects = await GoogleDrive.listProjects();
     const folderId = await GoogleDrive.pickProject(projects);

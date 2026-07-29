@@ -22,38 +22,44 @@
     }));
   }
 
-  function acquireToken(interactive) {
+  /* Acquire an OAuth token. GIS opens a popup if no cached token exists.
+     Must be called synchronously within a user-gesture event (click) so the
+     browser does not block the popup. */
+  function acquireToken() {
     if (!tokenClient) {
       var id = decode();
       if (!id || typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2)
-        return Promise.reject(new Error('Google Identity Services not loaded. Check network / script tag.'));
+        return Promise.reject(new Error('Google Identity Services not loaded.'));
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: id,
         scope: SCOPES,
-        callback: function (resp) {
-          if (resp.access_token) accessToken = resp.access_token;
-        },
       });
     }
     return new Promise(function (resolve, reject) {
       tokenClient.callback = function (resp) {
         if (resp.error) { reject(new Error(resp.error)); return; }
+        if (!resp.access_token) { reject(new Error('No access token received')); return; }
         accessToken = resp.access_token;
         resolve();
       };
-      tokenClient.requestAccessToken({ prompt: interactive ? '' : 'none' });
+      // GIS will show a popup if no cached token is available
+      tokenClient.requestAccessToken();
     });
   }
 
+  /* Verify the current token is still valid, or acquire a new one.
+     On first call (no token) the GIS popup opens synchronously within the
+     caller's user-gesture context, so the browser does not block it.
+     On subsequent calls the cached token is reused silently. */
   function ensureToken() {
     if (accessToken) {
       return api('https://www.googleapis.com/drive/v3/about?fields=user').then(function (r) {
         if (r.ok) return;
         accessToken = null;
-        return acquireToken(true);
+        return acquireToken();
       });
     }
-    return acquireToken(false).catch(function () { return acquireToken(true); });
+    return acquireToken();
   }
 
   /* Find or create a folder by name, optionally under a parent.
@@ -107,24 +113,26 @@
       });
   }
 
-  function multipartUpload(fileName, folderId, jsonStr) {
-    var boundary = 'bbs_drive_boundary';
-    var body = [
-      '--' + boundary,
-      'Content-Type: application/json; charset=UTF-8',
-      '',
-      JSON.stringify({ name: fileName, parents: [folderId] }),
-      '--' + boundary,
-      'Content-Type: application/json',
-      '',
-      jsonStr,
-      '--' + boundary + '--',
-    ].join('\r\n');
-    return api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  /* Create a file with metadata, then upload content.
+     Two-step approach is more reliable than multipart for setting parents. */
+  function createThenUpload(fileName, folderId, jsonStr) {
+    return api('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
-      body: body,
-      headers: { 'Content-Type': 'multipart/related; boundary=' + boundary },
-    }).then(function (r) { return r.json(); });
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fileName, parents: [folderId] }),
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (e) { throw new Error('Create failed: ' + (e.error && e.error.message || r.statusText)); });
+      return r.json();
+    }).then(function (file) {
+      return api('https://www.googleapis.com/upload/drive/v3/files/' + file.id + '?uploadType=media', {
+        method: 'PATCH',
+        body: jsonStr,
+        headers: { 'Content-Type': 'application/json' },
+      }).then(function (r) {
+        if (!r.ok) return r.json().then(function (e) { throw new Error('Upload failed: ' + (e.error && e.error.message || r.statusText)); });
+        return r.json();
+      });
+    });
   }
 
   /* ──────── Shared dialog helpers ──────── */
@@ -239,7 +247,7 @@
           String(now.getHours()).padStart(2, '0') + '-' +
           String(now.getMinutes()).padStart(2, '0');
         var name = label + '_backup_' + ts + '.json';
-        return multipartUpload(name, folderId, JSON.stringify(data, null, 2)).then(function () { return name; });
+        return createThenUpload(name, folderId, JSON.stringify(data, null, 2)).then(function () { return name; });
       });
     },
 
@@ -298,6 +306,12 @@
        Rejects with 'canceled' if user cancels. */
     pickFile: function (files) {
       return pickFile(files);
+    },
+
+    /* Request OAuth authorization explicitly. Triggers the GIS popup if needed.
+       Call this directly from a click handler to ensure the popup isn't blocked. */
+    requestAuth: function () {
+      return ensureToken();
     },
 
     /* Revoke the current token. */
