@@ -96,6 +96,7 @@
     var esc = name.replace(/'/g, "\\'");
     var parts = "name='" + esc + "' and mimeType='application/vnd.google-apps.folder' and trashed=false";
     if (parentId) parts += " and '" + parentId + "' in parents";
+    else parts += " and 'root' in parents";
     var q = encodeURIComponent(parts);
     return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
       .then(function (data) {
