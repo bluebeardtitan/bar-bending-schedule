@@ -137,14 +137,26 @@
 
   /* ──────── Upload ──────── */
 
+  /* Create a file (no parent → goes to root), move it to the target folder,
+     then upload the content.  The explicit addParents/removeParents step
+     ensures the file ends up in the right folder regardless of whether the
+     initial create honours the parents field. */
   function createThenUpload(fileName, folderId, jsonStr) {
     return api('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: fileName, parents: [folderId] }),
+      body: JSON.stringify({ name: fileName }),
     }).then(function (r) {
       if (!r.ok) return r.json().then(function (e) { throw new Error('Create failed: ' + (e.error && e.error.message || r.statusText)); });
       return r.json();
+    }).then(function (file) {
+      var moveUrl = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(file.id) +
+        '?addParents=' + encodeURIComponent(folderId) +
+        '&removeParents=root';
+      return api(moveUrl, { method: 'PATCH' }).then(function (r) {
+        if (!r.ok) return r.json().then(function (e) { throw new Error('Move failed: ' + (e.error && e.error.message || r.statusText)); });
+        return file;
+      });
     }).then(function (file) {
       return api('https://www.googleapis.com/upload/drive/v3/files/' + file.id + '?uploadType=media', {
         method: 'PATCH',
