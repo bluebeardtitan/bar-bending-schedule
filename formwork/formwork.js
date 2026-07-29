@@ -1140,6 +1140,48 @@ $('#printBBS').addEventListener('click', async () => {
   }
 });
 
+/* =========================
+   Google Drive Sync
+   ========================= */
+if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
+  try {
+    closeToolbarMenus();
+    const projName = projectInfo.project.trim();
+    if (!projName) {
+      feedback('✖ Set the Name of Work in Project Info before backing up to Drive', 'err');
+      return;
+    }
+    const data = { tool: 'cfs', version: 1, rows, settings, projectInfo };
+    const name = await GoogleDrive.save('cfs', data, projName);
+    feedback(`✔ Backed up to Drive: ${name}`, 'ok');
+  } catch (e) {
+    if (e.message !== 'canceled') feedback(`✖ Drive backup failed: ${e.message}`, 'err');
+  }
+});
+if ($('#driveRestore')) $('#driveRestore').addEventListener('click', async () => {
+  try {
+    closeToolbarMenus();
+    const projects = await GoogleDrive.listProjects();
+    const folderId = await GoogleDrive.pickProject(projects);
+    const files = await GoogleDrive.listBackups(folderId);
+    const fileId = await GoogleDrive.pickFile(files);
+    const data = await GoogleDrive.load(fileId);
+    if (data.tool && data.tool !== 'cfs') {
+      feedback(`✖ This backup is from ${data.tool}, not CFS`, 'err');
+      return;
+    }
+    if (data.rows) { rows = data.rows; editIndex = -1; }
+    if (data.settings) { settings = data.settings; saveSettings(); renderSummary(); }
+    if (data.projectInfo) { projectInfo = Object.assign({}, INFO_DEFAULTS, data.projectInfo); applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); }
+    clampPage();
+    persist(); render();
+    const n = data.rows ? data.rows.length : 0;
+    feedback(`✔ Restored ${n} member${n === 1 ? '' : 's'} from Drive`, 'ok');
+  } catch (e) {
+    if (e.message !== 'canceled') feedback(`✖ Drive restore failed: ${e.message}`, 'err');
+  }
+});
+
 /* Pagination, theme toggle, keyboard shortcuts and the feedback toast are all
    wired by common.js (initPagination/initTheme/initShortcuts/feedback via
    initCommonChrome). */

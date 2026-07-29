@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8F%97%EF%B8%8F</text></svg>" />
 <link rel="stylesheet" href="bbs/bbs.css" />
 <link rel="stylesheet" href="formwork/formwork.css" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="cfs">
 
@@ -278,6 +279,9 @@
           <button type="button" class="options-item" id="regenSketches" role="menuitem"
             title="Rebuild the vector model for every saved sketch so old sketches render at full size in PDF">
             <span class="oi-ico">🔄</span><span class="oi-txt">Regenerate sketches</span></button>
+          <div class="tm-sep"></div>
+          <button type="button" class="options-item" id="driveBackup" role="menuitem">
+            <span class="oi-ico">☁️</span><span class="oi-txt">Google Drive Backup</span></button>
         </div>
       </div>
       <div class="menu-wrap">
@@ -290,7 +294,10 @@
           <button type="button" class="options-item" id="importCSV" role="menuitem">
             <span class="oi-ico">⬆️</span><span class="oi-txt">CSV Spreadsheet</span><span class="oi-ext">.csv</span></button>
           <button type="button" class="options-item" id="loadJSON" role="menuitem">
-            <span class="oi-ico">📂</span><span class="oi-txt">Project File</span><span class="oi-ext">.json</span></button>
+            <span class="oi-ico">💾</span><span class="oi-txt">Project File</span><span class="oi-ext">.json</span></button>
+          <div class="tm-sep"></div>
+          <button type="button" class="options-item" id="driveRestore" role="menuitem">
+            <span class="oi-ico">☁️</span><span class="oi-txt">Google Drive Restore</span></button>
         </div>
       </div>
       <button class="btn small danger" id="clearAll"  tabindex="44">🗑️ Clear</button>
@@ -366,6 +373,7 @@
 <script src="bbs/konva.min.js"></script>
 <script src="bbs/jspdf.umd.min.js"></script>
 <script src="bbs/common.js"></script>
+<script src="bbs/drive.js"></script>
 <script src="bbs/shape-vector.js"></script>
 <script src="bbs/shape-drawer.js"></script>
 <script src="bbs/papaparse.min.js"></script>

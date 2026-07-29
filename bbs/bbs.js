@@ -1613,5 +1613,47 @@ document.getElementById('shapeDrawBtn').addEventListener('click', () => {
   }, { history: currentShapeHist });   // reload the saved drawing for editing
 });
 
+/* =========================
+   Google Drive Sync
+   ========================= */
+if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
+  try {
+    closeToolbarMenus();
+    const projName = projectInfo.project.trim();
+    if (!projName) {
+      feedback('✖ Set the Name of Work in Project Info before backing up to Drive', 'err');
+      return;
+    }
+    const data = { tool: 'bbs', version: 2, rows, settings, projectInfo };
+    const name = await GoogleDrive.save('bbs', data, projName);
+    feedback(`✔ Backed up to Drive: ${name}`, 'ok');
+  } catch (e) {
+    if (e.message !== 'canceled') feedback(`✖ Drive backup failed: ${e.message}`, 'err');
+  }
+});
+if ($('#driveRestore')) $('#driveRestore').addEventListener('click', async () => {
+  try {
+    closeToolbarMenus();
+    const projects = await GoogleDrive.listProjects();
+    const folderId = await GoogleDrive.pickProject(projects);
+    const files = await GoogleDrive.listBackups(folderId);
+    const fileId = await GoogleDrive.pickFile(files);
+    const data = await GoogleDrive.load(fileId);
+    if (data.tool && data.tool !== 'bbs') {
+      feedback(`✖ This backup is from ${data.tool}, not BBS`, 'err');
+      return;
+    }
+    if (data.rows) { rows = data.rows; editIndex = -1; }
+    if (data.settings) { settings = data.settings; saveSettings(); }
+    if (data.projectInfo) { projectInfo = Object.assign({}, INFO_DEFAULTS, data.projectInfo); applyInfoToForm(); saveInfoToStorage(); updatePrintMeta(); }
+    clampPage();
+    persist(); render();
+    const n = data.rows ? data.rows.length : 0;
+    feedback(`✔ Restored ${n} bar${n === 1 ? '' : 's'} from Drive`, 'ok');
+  } catch (e) {
+    if (e.message !== 'canceled') feedback(`✖ Drive restore failed: ${e.message}`, 'err');
+  }
+});
+
 /* Keyboard shortcuts (Alt+I/S/H, Esc, Enter) and the feedback toast are wired
    in common.js via initShortcuts()/feedback() (called from initCommonChrome). */
