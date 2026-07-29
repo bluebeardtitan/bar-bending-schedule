@@ -69,9 +69,11 @@
       });
   }
 
-  /* Find or create a subfolder by name under a parent folder. */
-  function ensureSubFolder(parentId, name) {
-    var esc = name.replace(/'/g, "\\'");
+  /* Find or create a subfolder under parentId.
+     @param uuid   unique folder name (UUID)
+     @param projName  human-readable project name (stored as folder property) */
+  function ensureProjectFolder(parentId, uuid, projName) {
+    var esc = uuid.replace(/'/g, "\\'");
     var q = encodeURIComponent("name='" + esc + "' and '" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
     return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
       .then(function (data) {
@@ -79,7 +81,12 @@
         return api('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+          body: JSON.stringify({
+            name: uuid,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentId],
+            properties: { projectName: projName },
+          }),
         }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
       });
   }
@@ -166,12 +173,12 @@
       'Select a project to restore:',
       projects,
       function (p) {
-        var name = p.name || 'Unknown project';
+        var displayName = p.projectName || p.name || 'Unknown';
+        var uuid = p.name || '';
         var count = p.fileCount != null ? ' (' + p.fileCount + ' backup' + (p.fileCount === 1 ? '' : 's') + ')' : '';
-        var time = p.createdTime ? fmtDate(p.createdTime) : '';
         return '<button type="button" data-drive-val="' + p.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
-          '<span style="font-weight:600">' + escapeHtml(name) + '</span>' +
-          '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(time) + count + '</span>' +
+          '<span style="font-weight:600">' + escapeHtml(displayName) + '</span>' +
+          '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(uuid) + ' · ' + escapeHtml(count) + '</span>' +
         '</button>';
       }
     );
@@ -202,11 +209,12 @@
     /* Save a JSON-serialisable object to Drive under a project subfolder.
        @param label       e.g. "bbs" or "cfs"
        @param data        the object to serialise
-       @param projectName project name — used as subfolder name; required
+       @param uuid        unique folder name (UUID v4)
+       @param projectName human-readable project name (stored as folder property)
        @return Promise<string> — the saved file name */
-    save: function (label, data, projectName) {
+    save: function (label, data, uuid, projectName) {
       return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
-        return ensureSubFolder(rootId, projectName || 'Unnamed Project');
+        return ensureProjectFolder(rootId, uuid, projectName || 'Unnamed Project');
       }).then(function (folderId) {
         var now = new Date();
         var ts = now.getFullYear() + '-' +
@@ -220,15 +228,16 @@
     },
 
     /* List project subfolders under the root folder.
-       @return Promise<Array<{id,name,createdTime,fileCount}>> */
+       @return Promise<Array<{id,name,projectName,createdTime,fileCount}>> */
     listProjects: function () {
       return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
         var q = encodeURIComponent("'" + rootId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
-        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=name')
+        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,properties,createdTime)&orderBy=name')
           .then(function (r) { return r.json(); });
       }).then(function (data) {
         var folders = data.files || [];
         var qs = folders.map(function (f) {
+          f.projectName = (f.properties && f.properties.projectName) || f.name;
           var q = encodeURIComponent("'" + f.id + "' in parents and trashed=false");
           return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1')
             .then(function (r) { return r.json(); })
