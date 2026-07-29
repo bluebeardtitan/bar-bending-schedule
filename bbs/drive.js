@@ -6,7 +6,8 @@
 
   var CLIENT_ID_B64 = 'MTA2NzA3NTQ5NTIwMC1wMGhhdXJuanRwMzJvZm51YWVuNzQ5NzBybDN1OHY1di5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==';
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
-  var ROOT_FOLDER = 'BBS Backups';
+  var MAK_FOLDER = 'MAK-Projects';
+  var BBS_FOLDER = 'Bar-Bending-Schedule-Backups';
 
   var tokenClient = null;
   var accessToken = null;
@@ -55,18 +56,33 @@
     return acquireToken(false).catch(function () { return acquireToken(true); });
   }
 
-  /* Find or create the root 'BBS Backups' folder. */
-  function ensureRootFolder() {
-    var q = encodeURIComponent("name='" + ROOT_FOLDER + "' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  /* Find or create a folder by name, optionally under a parent.
+     @param name     folder name
+     @param parentId optional parent folder ID
+     @return Promise<string> folder ID */
+  function ensureFolder(name, parentId) {
+    var esc = name.replace(/'/g, "\\'");
+    var parts = "name='" + esc + "' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+    if (parentId) parts += " and '" + parentId + "' in parents";
+    var q = encodeURIComponent(parts);
     return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.files && data.files.length) return data.files[0].id;
+        var body = { name: name, mimeType: 'application/vnd.google-apps.folder' };
+        if (parentId) body.parents = [parentId];
         return api('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: ROOT_FOLDER, mimeType: 'application/vnd.google-apps.folder' }),
+          body: JSON.stringify(body),
         }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
       });
+  }
+
+  /* Ensure MAK-Projects/Bar-Bending-Schedule-Backups exists and return its ID. */
+  function ensureBackupsRoot() {
+    return ensureFolder(MAK_FOLDER).then(function (makId) {
+      return ensureFolder(BBS_FOLDER, makId);
+    });
   }
 
   /* Find or create a subfolder under parentId.
@@ -206,14 +222,14 @@
   /* ────────────── Public API ────────────── */
 
   window.GoogleDrive = {
-    /* Save a JSON-serialisable object to Drive under a project subfolder.
+    /* Save a JSON-serialisable object to Drive under MAK-Projects/Bar-Bending-Schedule-Backups/<uuid>.
        @param label       e.g. "bbs" or "cfs"
        @param data        the object to serialise
        @param uuid        unique folder name (UUID v4)
        @param projectName human-readable project name (stored as folder property)
        @return Promise<string> — the saved file name */
     save: function (label, data, uuid, projectName) {
-      return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
+      return ensureToken().then(function () { return ensureBackupsRoot(); }).then(function (rootId) {
         return ensureProjectFolder(rootId, uuid, projectName || 'Unnamed Project');
       }).then(function (folderId) {
         var now = new Date();
@@ -227,10 +243,10 @@
       });
     },
 
-    /* List project subfolders under the root folder.
+    /* List project subfolders under Bar-Bending-Schedule-Backups.
        @return Promise<Array<{id,name,projectName,createdTime,fileCount}>> */
     listProjects: function () {
-      return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
+      return ensureToken().then(function () { return ensureBackupsRoot(); }).then(function (rootId) {
         var q = encodeURIComponent("'" + rootId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
         return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,properties,createdTime)&orderBy=name')
           .then(function (r) { return r.json(); });
