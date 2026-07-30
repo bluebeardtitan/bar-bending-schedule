@@ -1,18 +1,14 @@
-/* Google Drive sync — OAuth2 implicit grant (redirect flow) + Drive API v3
-   Uses a full-page redirect to Google for auth (no popup), then returns to the
-   same page with the access token in the URL fragment.  Token is cached in
-   localStorage across page reloads (same key scheme as scheme-database). */
+/* Google Drive sync — OAuth2 + Drive API v3
+   Uses Google Identity Services (GIS) loaded from accounts.google.com/gsi/client.
+   Client ID is base64-encoded to reduce visual scanning surface. */
 (function () {
   'use strict';
 
   var CLIENT_ID_B64 = 'MTA2NzA3NTQ5NTIwMC1wMGhhdXJuanRwMzJvZm51YWVuNzQ5NzBybDN1OHY1di5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==';
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
-  var TOKEN_KEY = 'bbs_gdrive_token';
-  var EXPIRY_KEY = 'bbs_gdrive_token_expiry';
-  var PENDING_KEY = 'bbs_gdrive_pending_action';
-  var MAK_FOLDER = 'MAK-Projects';
-  var BBS_FOLDER = 'Bar-Bending-Schedule-Backups';
+  var ROOT_FOLDER = 'BBS Backups';
 
+  var tokenClient = null;
   var accessToken = null;
 
   function decode() {
@@ -25,168 +21,90 @@
     }));
   }
 
-  /* fetch + parse JSON, throwing Google's real error message on non-2xx
-     instead of silently resolving to {} (which previously let a 403 turn
-     into an undefined folder id several steps downstream, surfacing as a
-     confusing unrelated 404 on the move/upload step instead of the real
-     cause). */
-  function apiJson(url, opts) {
-    return api(url, opts).then(function (r) {
-      if (r.ok) return r.json();
-      return r.json().catch(function () { return {}; }).then(function (e) {
-        throw new Error((e.error && e.error.message) || (r.status + ' ' + r.statusText));
+  function acquireToken(interactive) {
+    if (!tokenClient) {
+      var id = decode();
+      if (!id || typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2)
+        return Promise.reject(new Error('Google Identity Services not loaded. Check network / script tag.'));
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: id,
+        scope: SCOPES,
+        callback: function (resp) {
+          if (resp.access_token) accessToken = resp.access_token;
+        },
       });
+    }
+    return new Promise(function (resolve, reject) {
+      tokenClient.callback = function (resp) {
+        if (resp.error) { reject(new Error(resp.error)); return; }
+        accessToken = resp.access_token;
+        resolve();
+      };
+      tokenClient.requestAccessToken({ prompt: interactive ? '' : 'none' });
     });
   }
 
-  /* ──────── OAuth redirect flow ──────── */
-
-  function getRedirectUri() {
-    return window.location.origin + window.location.pathname;
-  }
-
-  /* Initiate Google OAuth — redirects the page to Google's consent screen. */
-  function oauthSignIn() {
-    var clientId = decode();
-    if (!clientId) { alert('Invalid client ID configuration.'); return; }
-    var form = document.createElement('form');
-    form.setAttribute('method', 'GET');
-    form.setAttribute('action', 'https://accounts.google.com/o/oauth2/v2/auth');
-    var params = {
-      client_id: clientId,
-      redirect_uri: getRedirectUri(),
-      response_type: 'token',
-      scope: SCOPES,
-      include_granted_scopes: 'true',
-      prompt: 'consent',
-    };
-    for (var p in params) {
-      var input = document.createElement('input');
-      input.setAttribute('type', 'hidden');
-      input.setAttribute('name', p);
-      input.setAttribute('value', params[p]);
-      form.appendChild(input);
+  function ensureToken() {
+    if (accessToken) {
+      return api('https://www.googleapis.com/drive/v3/about?fields=user').then(function (r) {
+        if (r.ok) return;
+        accessToken = null;
+        return acquireToken(true);
+      });
     }
-    document.body.appendChild(form);
-    form.submit();
+    return acquireToken(false).catch(function () { return acquireToken(true); });
   }
 
-  /* Extract token from URL fragment after OAuth redirect. */
-  function extractTokenFromHash() {
-    var hash = window.location.hash;
-    if (!hash || !hash.includes('access_token')) return false;
-    var params = new URLSearchParams(hash.substring(1));
-    var token = params.get('access_token');
-    var expiresIn = parseInt(params.get('expires_in') || '3600', 10);
-    if (token) {
-      var expiry = Date.now() + (expiresIn - 60) * 1000;
-      try {
-        localStorage.setItem(TOKEN_KEY, token);
-        localStorage.setItem(EXPIRY_KEY, String(expiry));
-      } catch (e) { /* localStorage may be unavailable */ }
-      accessToken = token;
-      window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      return true;
-    }
-    return false;
+  /* Find or create the root 'BBS Backups' folder. */
+  function ensureRootFolder() {
+    var q = encodeURIComponent("name='" + ROOT_FOLDER + "' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+    return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.files && data.files.length) return data.files[0].id;
+        return api('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: ROOT_FOLDER, mimeType: 'application/vnd.google-apps.folder' }),
+        }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
+      });
   }
 
-  /* Load a previously cached token from localStorage. */
-  function loadCachedToken() {
-    if (accessToken) return true;
-    try {
-      var token = localStorage.getItem(TOKEN_KEY);
-      var expiry = parseInt(localStorage.getItem(EXPIRY_KEY) || '0', 10);
-      if (token && expiry > Date.now()) {
-        accessToken = token;
-        return true;
-      }
-    } catch (e) { /* ignore */ }
-    return false;
-  }
-
-  /* ──────── Folder helpers ──────── */
-
-  function ensureFolder(name, parentId) {
+  /* Find or create a subfolder by name under a parent folder. */
+  function ensureSubFolder(parentId, name) {
     var esc = name.replace(/'/g, "\\'");
-    var parts = "name='" + esc + "' and mimeType='application/vnd.google-apps.folder' and trashed=false";
-    if (parentId) parts += " and '" + parentId + "' in parents";
-    else parts += " and 'root' in parents";
-    var q = encodeURIComponent(parts);
-    return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)')
-      .then(function (data) {
-        if (data.files && data.files.length) return data.files[0].id;
-        var body = { name: name, mimeType: 'application/vnd.google-apps.folder' };
-        if (parentId) body.parents = [parentId];
-        return apiJson('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }).then(function (f) { return f.id; });
-      });
-  }
-
-  function ensureBackupsRoot() {
-    return ensureFolder(MAK_FOLDER).then(function (makId) {
-      return ensureFolder(BBS_FOLDER, makId);
-    });
-  }
-
-  function ensureProjectFolder(parentId, uuid, projName) {
-    var esc = uuid.replace(/'/g, "\\'");
     var q = encodeURIComponent("name='" + esc + "' and '" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
-    return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)')
+    return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.files && data.files.length) return data.files[0].id;
-        return apiJson('https://www.googleapis.com/drive/v3/files', {
+        return api('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: uuid,
-            mimeType: 'application/vnd.google-apps.folder',
-            parents: [parentId],
-            properties: { projectName: projName },
-          }),
-        }).then(function (f) { return f.id; });
+          body: JSON.stringify({ name: name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+        }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
       });
   }
 
-  /* ──────── Upload ──────── */
-
-  /* Create a file (no parent → goes to root), move it to the target folder,
-     then upload the content.  The explicit addParents/removeParents step
-     ensures the file ends up in the right folder regardless of whether the
-     initial create honours the parents field. */
-  function createThenUpload(fileName, folderId, jsonStr) {
-    return api('https://www.googleapis.com/drive/v3/files', {
+  function multipartUpload(fileName, folderId, jsonStr) {
+    var boundary = 'bbs_drive_boundary';
+    var body = [
+      '--' + boundary,
+      'Content-Type: application/json; charset=UTF-8',
+      '',
+      JSON.stringify({ name: fileName, parents: [folderId] }),
+      '--' + boundary,
+      'Content-Type: application/json',
+      '',
+      jsonStr,
+      '--' + boundary + '--',
+    ].join('\r\n');
+    return api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: fileName }),
-    }).then(function (r) {
-      if (!r.ok) return r.json().then(function (e) { throw new Error('Create failed: ' + (e.error && e.error.message || r.statusText)); });
-      return r.json();
-    }).then(function (file) {
-      var moveUrl = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(file.id) +
-        '?addParents=' + encodeURIComponent(folderId) +
-        '&removeParents=root';
-      return api(moveUrl, { method: 'PATCH' }).then(function (r) {
-        if (!r.ok) return r.json().then(function (e) { throw new Error('Move failed: ' + (e.error && e.error.message || r.statusText)); });
-        return file;
-      });
-    }).then(function (file) {
-      return api('https://www.googleapis.com/upload/drive/v3/files/' + file.id + '?uploadType=media', {
-        method: 'PATCH',
-        body: jsonStr,
-        headers: { 'Content-Type': 'application/json' },
-      }).then(function (r) {
-        if (!r.ok) return r.json().then(function (e) { throw new Error('Upload failed: ' + (e.error && e.error.message || r.statusText)); });
-        return r.json();
-      });
-    });
+      body: body,
+      headers: { 'Content-Type': 'multipart/related; boundary=' + boundary },
+    }).then(function (r) { return r.json(); });
   }
 
-  /* ──────── Dialog helpers ──────── */
-
+  /* ──────── Shared dialog helpers ──────── */
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -239,91 +157,56 @@
     });
   }
 
+  /* ──────── Project picker dialog ──────── */
   function pickProject(projects) {
-    if (!projects || !projects.length) return Promise.reject(new Error('no projects'));
-    return showDialog('Restore from Google Drive', 'Select a project to restore:', projects, function (p) {
-      var displayName = p.projectName || p.name || 'Unknown';
-      var uuid = p.name || '';
-      var count = p.fileCount != null ? ' (' + p.fileCount + ' backup' + (p.fileCount === 1 ? '' : 's') + ')' : '';
-      return '<button type="button" data-drive-val="' + p.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
-        '<span style="font-weight:600">' + escapeHtml(displayName) + '</span>' +
-        '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(uuid) + ' · ' + escapeHtml(count) + '</span>' +
-      '</button>';
-    });
+    if (!projects || !projects.length)
+      return Promise.reject(new Error('no projects'));
+    return showDialog(
+      'Restore from Google Drive',
+      'Select a project to restore:',
+      projects,
+      function (p) {
+        var name = p.name || 'Unknown project';
+        var count = p.fileCount != null ? ' (' + p.fileCount + ' backup' + (p.fileCount === 1 ? '' : 's') + ')' : '';
+        var time = p.createdTime ? fmtDate(p.createdTime) : '';
+        return '<button type="button" data-drive-val="' + p.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
+          '<span style="font-weight:600">' + escapeHtml(name) + '</span>' +
+          '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(time) + count + '</span>' +
+        '</button>';
+      }
+    );
   }
 
+  /* ──────── Backup file picker dialog ──────── */
   function pickFile(files) {
-    if (!files || !files.length) return Promise.reject(new Error('no backups'));
-    return showDialog('Select Backup', 'Choose a backup to restore:', files, function (f) {
-      var name = f.name || 'unknown';
-      var time = f.createdTime ? fmtDate(f.createdTime) : '';
-      return '<button type="button" data-drive-val="' + f.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
-        '<span style="font-weight:600">' + escapeHtml(name) + '</span>' +
-        (time ? '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(time) + '</span>' : '') +
-      '</button>';
-    });
+    if (!files || !files.length)
+      return Promise.reject(new Error('no backups'));
+    return showDialog(
+      'Select Backup',
+      'Choose a backup to restore:',
+      files,
+      function (f) {
+        var name = f.name || 'unknown';
+        var time = f.createdTime ? fmtDate(f.createdTime) : '';
+        return '<button type="button" data-drive-val="' + f.id + '" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px;text-align:left;transition:background .15s" onmouseover="this.style.background=\'var(--accent)\'" onmouseout="this.style.background=\'transparent\'">' +
+          '<span style="font-weight:600">' + escapeHtml(name) + '</span>' +
+          (time ? '<span style="font-size:10px;color:var(--muted)">' + escapeHtml(time) + '</span>' : '') +
+        '</button>';
+      }
+    );
   }
 
   /* ────────────── Public API ────────────── */
 
   window.GoogleDrive = {
-    /* Init — call once on page load. Extracts token from redirect hash and
-       loads any cached token from localStorage. Returns { signedIn, justAuthenticated }:
-       justAuthenticated is true only when the token was just extracted from an
-       OAuth redirect (as opposed to a token already cached from an earlier
-       session) — that's the caller's cue to resume whatever action was stashed
-       via requestAuth(pendingAction) before the redirect. */
-    init: function () {
-      var justAuthenticated = extractTokenFromHash();
-      if (!justAuthenticated) loadCachedToken();
-      return { signedIn: !!accessToken, justAuthenticated: justAuthenticated };
-    },
-
-    /* Reads and clears the action name stashed by requestAuth() right before
-       an OAuth redirect (sessionStorage survives the same-tab navigation,
-       unlike in-memory JS state, which is why this is needed at all). */
-    takePendingAction: function () {
-      var v = null;
-      try {
-        v = sessionStorage.getItem(PENDING_KEY);
-        sessionStorage.removeItem(PENDING_KEY);
-      } catch (e) { /* ignore */ }
-      return v;
-    },
-
-    /* Check whether a valid token exists (local check, no network call). */
-    isSignedIn: function () {
-      return !!accessToken;
-    },
-
-    /* Authorize: if a cached token exists and is fresh, resolve immediately.
-       Otherwise redirect to Google for consent.  This never returns to the
-       calling code — the page navigates away.
-       `pendingAction` ('backup' | 'restore') is stashed so init() can hand it
-       back via takePendingAction() once we return from the redirect. */
-    requestAuth: function (pendingAction) {
-      if (loadCachedToken()) return Promise.resolve();
-      if (pendingAction) {
-        try { sessionStorage.setItem(PENDING_KEY, pendingAction); } catch (e) { /* ignore */ }
-      }
-      oauthSignIn();
-      return new Promise(function () {}); // never resolves — page redirects
-    },
-
-    /* Disconnect: clear cached token. */
-    signOut: function () {
-      accessToken = null;
-      try {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(EXPIRY_KEY);
-      } catch (e) { /* ignore */ }
-      return Promise.resolve();
-    },
-
-    /* Save data to Drive under MAK-Projects/Bar-Bending-Schedule-Backups/<uuid>. */
-    save: function (label, data, uuid, projectName) {
-      return ensureBackupsRoot().then(function (rootId) {
-        return ensureProjectFolder(rootId, uuid, projectName || 'Unnamed Project');
+    /* Save a JSON-serialisable object to Drive under a project subfolder.
+       @param label       e.g. "bbs" or "cfs"
+       @param data        the object to serialise
+       @param projectName project name — used as subfolder name; required
+       @return Promise<string> — the saved file name */
+    save: function (label, data, projectName) {
+      return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
+        return ensureSubFolder(rootId, projectName || 'Unnamed Project');
       }).then(function (folderId) {
         var now = new Date();
         var ts = now.getFullYear() + '-' +
@@ -332,51 +215,78 @@
           String(now.getHours()).padStart(2, '0') + '-' +
           String(now.getMinutes()).padStart(2, '0');
         var name = label + '_backup_' + ts + '.json';
-        return createThenUpload(name, folderId, JSON.stringify(data, null, 2)).then(function () { return name; });
+        return multipartUpload(name, folderId, JSON.stringify(data, null, 2)).then(function () { return name; });
       });
     },
 
-    /* List project subfolders under Bar-Bending-Schedule-Backups. */
+    /* List project subfolders under the root folder.
+       @return Promise<Array<{id,name,createdTime,fileCount}>> */
     listProjects: function () {
-      return ensureBackupsRoot().then(function (rootId) {
+      return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
         var q = encodeURIComponent("'" + rootId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
-        return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,properties,createdTime)&orderBy=name');
+        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=name')
+          .then(function (r) { return r.json(); });
       }).then(function (data) {
         var folders = data.files || [];
         var qs = folders.map(function (f) {
-          f.projectName = (f.properties && f.properties.projectName) || f.name;
           var q = encodeURIComponent("'" + f.id + "' in parents and trashed=false");
-          return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1')
+          return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1')
+            .then(function (r) { return r.json(); })
             .then(function (d) { f.fileCount = (d.files || []).length; return f; });
         });
         return Promise.all(qs);
       });
     },
 
-    /* List backup files in a project folder. */
+    /* List backup files in a project folder.
+       @param folderId  the project subfolder ID
+       @return Promise<Array<{id,name,createdTime}>> */
     listBackups: function (folderId) {
-      var q = encodeURIComponent("'" + folderId + "' in parents and trashed=false");
-      return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=createdTime%20desc')
-        .then(function (data) { return data.files || []; });
+      return ensureToken().then(function () {
+        var q = encodeURIComponent("'" + folderId + "' in parents and trashed=false");
+        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=createdTime%20desc')
+          .then(function (r) { return r.json(); });
+      }).then(function (data) { return data.files || []; });
     },
 
     /* Download a backup and parse as JSON. */
     load: function (fileId) {
-      return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media').then(function (r) {
-        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
-          throw new Error((e.error && e.error.message) || (r.status + ' ' + r.statusText));
-        });
-        return r.text();
+      return ensureToken().then(function () {
+        return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media').then(function (r) { return r.text(); });
       }).then(function (text) { return JSON.parse(text); });
     },
 
     /* Delete a backup file. */
     'delete': function (fileId) {
-      return api('https://www.googleapis.com/drive/v3/files/' + fileId, { method: 'DELETE' });
+      return ensureToken().then(function () {
+        return api('https://www.googleapis.com/drive/v3/files/' + fileId, { method: 'DELETE' });
+      });
     },
 
-    /* Dialog pickers. */
-    pickProject: function (projects) { return pickProject(projects); },
-    pickFile: function (files) { return pickFile(files); },
+    /* Show a project picker dialog. Returns Promise<string> — the selected folderId.
+       Rejects with 'canceled' if user cancels. */
+    pickProject: function (projects) {
+      return pickProject(projects);
+    },
+
+    /* Show a file picker dialog. Returns Promise<string> — the selected fileId.
+       Rejects with 'canceled' if user cancels. */
+    pickFile: function (files) {
+      return pickFile(files);
+    },
+
+    /* Revoke the current token. */
+    signOut: function () {
+      if (!accessToken) return Promise.resolve();
+      return fetch('https://oauth2.googleapis.com/revoke?token=' + accessToken, { method: 'POST' }).then(function () {
+        accessToken = null;
+      }).catch(function () { accessToken = null; });
+    },
+
+    /* Check whether a valid token exists. */
+    isSignedIn: function () {
+      if (!accessToken) return Promise.resolve(false);
+      return api('https://www.googleapis.com/drive/v3/about?fields=user').then(function (r) { return r.ok; }).catch(function () { return false; });
+    },
   };
 })();

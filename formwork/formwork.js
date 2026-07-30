@@ -1151,17 +1151,8 @@ if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
       feedback('✖ Set the Name of Work in Project Info before backing up to Drive', 'err');
       return;
     }
-    let uuid = projectInfo.projectUuid;
-    if (!uuid) {
-      uuid = crypto.randomUUID();
-      projectInfo.projectUuid = uuid;
-      await saveInfoToStorage(); // must land in IndexedDB before requestAuth() can navigate away
-    }
-    feedback('⏳ Authorizing with Google…', 'ok');
-    await GoogleDrive.requestAuth('backup');
-    feedback('⏳ Syncing to Google Drive…', 'ok');
     const data = { tool: 'cfs', version: 1, rows, settings, projectInfo };
-    const name = await GoogleDrive.save('cfs', data, uuid, projName);
+    const name = await GoogleDrive.save('cfs', data, projName);
     feedback(`✔ Backed up to Drive: ${name}`, 'ok');
   } catch (e) {
     if (e.message !== 'canceled') feedback(`✖ Drive backup failed: ${e.message}`, 'err');
@@ -1170,15 +1161,10 @@ if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
 if ($('#driveRestore')) $('#driveRestore').addEventListener('click', async () => {
   try {
     closeToolbarMenus();
-    feedback('⏳ Authorizing with Google…', 'ok');
-    await GoogleDrive.requestAuth('restore');
-    feedback('⏳ Fetching project list from Drive…', 'ok');
     const projects = await GoogleDrive.listProjects();
     const folderId = await GoogleDrive.pickProject(projects);
-    feedback('⏳ Fetching backups…', 'ok');
     const files = await GoogleDrive.listBackups(folderId);
     const fileId = await GoogleDrive.pickFile(files);
-    feedback('⏳ Downloading backup…', 'ok');
     const data = await GoogleDrive.load(fileId);
     if (data.tool && data.tool !== 'cfs') {
       feedback(`✖ This backup is from ${data.tool}, not CFS`, 'err');
@@ -1192,7 +1178,7 @@ if ($('#driveRestore')) $('#driveRestore').addEventListener('click', async () =>
     const n = data.rows ? data.rows.length : 0;
     feedback(`✔ Restored ${n} member${n === 1 ? '' : 's'} from Drive`, 'ok');
   } catch (e) {
-    if (e.message !== 'canceled') feedback(`✖ Drive backup failed: ${e.message}`, 'err');
+    if (e.message !== 'canceled') feedback(`✖ Drive restore failed: ${e.message}`, 'err');
   }
 });
 
@@ -1210,7 +1196,6 @@ async function initPage() {
     AppDB.get('cfs_page').then(v => Number(v) || 1),
   ]);
   projectInfo = await loadInfo();
-  const driveState = GoogleDrive.init();
   applyInfoToForm();
   updatePrintMeta();
   applySettingsToForm();
@@ -1224,11 +1209,5 @@ async function initPage() {
     theme: { light: { icon: '🧱', label: 'Rust' }, dark: { icon: '🏗️', label: 'Steel' } },
   });
   render();
-
-  if (driveState.justAuthenticated) {
-    const pending = GoogleDrive.takePendingAction();
-    const btn = pending === 'backup' ? $('#driveBackup') : pending === 'restore' ? $('#driveRestore') : null;
-    if (btn) btn.click();
-  }
 }
 initPage();
