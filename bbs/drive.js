@@ -25,6 +25,20 @@
     }));
   }
 
+  /* fetch + parse JSON, throwing Google's real error message on non-2xx
+     instead of silently resolving to {} (which previously let a 403 turn
+     into an undefined folder id several steps downstream, surfacing as a
+     confusing unrelated 404 on the move/upload step instead of the real
+     cause). */
+  function apiJson(url, opts) {
+    return api(url, opts).then(function (r) {
+      if (r.ok) return r.json();
+      return r.json().catch(function () { return {}; }).then(function (e) {
+        throw new Error((e.error && e.error.message) || (r.status + ' ' + r.statusText));
+      });
+    });
+  }
+
   /* ──────── OAuth redirect flow ──────── */
 
   function getRedirectUri() {
@@ -99,16 +113,16 @@
     if (parentId) parts += " and '" + parentId + "' in parents";
     else parts += " and 'root' in parents";
     var q = encodeURIComponent(parts);
-    return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
+    return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)')
       .then(function (data) {
         if (data.files && data.files.length) return data.files[0].id;
         var body = { name: name, mimeType: 'application/vnd.google-apps.folder' };
         if (parentId) body.parents = [parentId];
-        return api('https://www.googleapis.com/drive/v3/files', {
+        return apiJson('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
+        }).then(function (f) { return f.id; });
       });
   }
 
@@ -121,10 +135,10 @@
   function ensureProjectFolder(parentId, uuid, projName) {
     var esc = uuid.replace(/'/g, "\\'");
     var q = encodeURIComponent("name='" + esc + "' and '" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
-    return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
+    return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)')
       .then(function (data) {
         if (data.files && data.files.length) return data.files[0].id;
-        return api('https://www.googleapis.com/drive/v3/files', {
+        return apiJson('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -133,7 +147,7 @@
             parents: [parentId],
             properties: { projectName: projName },
           }),
-        }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
+        }).then(function (f) { return f.id; });
       });
   }
 
@@ -326,15 +340,13 @@
     listProjects: function () {
       return ensureBackupsRoot().then(function (rootId) {
         var q = encodeURIComponent("'" + rootId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
-        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,properties,createdTime)&orderBy=name')
-          .then(function (r) { return r.json(); });
+        return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,properties,createdTime)&orderBy=name');
       }).then(function (data) {
         var folders = data.files || [];
         var qs = folders.map(function (f) {
           f.projectName = (f.properties && f.properties.projectName) || f.name;
           var q = encodeURIComponent("'" + f.id + "' in parents and trashed=false");
-          return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1')
-            .then(function (r) { return r.json(); })
+          return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1')
             .then(function (d) { f.fileCount = (d.files || []).length; return f; });
         });
         return Promise.all(qs);
@@ -344,14 +356,18 @@
     /* List backup files in a project folder. */
     listBackups: function (folderId) {
       var q = encodeURIComponent("'" + folderId + "' in parents and trashed=false");
-      return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=createdTime%20desc')
-        .then(function (r) { return r.json(); }).then(function (data) { return data.files || []; });
+      return apiJson('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=createdTime%20desc')
+        .then(function (data) { return data.files || []; });
     },
 
     /* Download a backup and parse as JSON. */
     load: function (fileId) {
-      return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media')
-        .then(function (r) { return r.text(); }).then(function (text) { return JSON.parse(text); });
+      return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media').then(function (r) {
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
+          throw new Error((e.error && e.error.message) || (r.status + ' ' + r.statusText));
+        });
+        return r.text();
+      }).then(function (text) { return JSON.parse(text); });
     },
 
     /* Delete a backup file. */
