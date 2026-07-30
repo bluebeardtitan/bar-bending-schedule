@@ -6,6 +6,7 @@
 
   var CLIENT_ID_B64 = 'MTA2NzA3NTQ5NTIwMC1wMGhhdXJuanRwMzJvZm51YWVuNzQ5NzBybDN1OHY1di5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==';
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
+  var PARENT_FOLDER = 'MAK-Projects';
   var ROOT_FOLDER = 'BBS Backups';
 
   var tokenClient = null;
@@ -55,18 +56,25 @@
     return acquireToken(false).catch(function () { return acquireToken(true); });
   }
 
-  /* Find or create the root 'BBS Backups' folder. */
-  function ensureRootFolder() {
-    var q = encodeURIComponent("name='" + ROOT_FOLDER + "' and mimeType='application/vnd.google-apps.folder' and trashed=false");
+  /* Find or create a top-level folder by name (created under Drive root if missing). */
+  function ensureTopFolder(name) {
+    var q = encodeURIComponent("name='" + name + "' and mimeType='application/vnd.google-apps.folder' and trashed=false");
     return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.files && data.files.length) return data.files[0].id;
         return api('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: ROOT_FOLDER, mimeType: 'application/vnd.google-apps.folder' }),
+          body: JSON.stringify({ name: name, mimeType: 'application/vnd.google-apps.folder' }),
         }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
       });
+  }
+
+  /* Find or create the root 'MAK-Projects/BBS Backups' folder path. */
+  function ensureRootFolder() {
+    return ensureTopFolder(PARENT_FOLDER).then(function (parentId) {
+      return ensureSubFolder(parentId, ROOT_FOLDER);
+    });
   }
 
   /* Find or create a subfolder by name under a parent folder. */
