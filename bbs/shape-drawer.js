@@ -34,7 +34,7 @@ let _konvaLayer = null;
 function getKonvaLayer() { return _konvaLayer; }
 
 function initKonvaStage(containerEl, width, height) {
-  if (typeof Konva === 'undefined') throw new Error('Konva not loaded — check bbs/konva.min.js script tag.');
+  if (typeof Konva === 'undefined') throw new Error('Konva not loaded — check bbs/lib/konva.min.js script tag.');
   if (_konvaStage) { _konvaStage.destroy(); _konvaStage = null; _konvaLayer = null; _gridLayer = null; }
   _konvaStage = new Konva.Stage({ container: containerEl, width, height });
   _konvaLayer = new Konva.Layer();
