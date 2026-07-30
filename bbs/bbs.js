@@ -1555,7 +1555,7 @@ async function initPage() {
     AppDB.get('bbs_page').then(v => Number(v) || 1),
   ]);
   projectInfo = await loadInfo();
-  GoogleDrive.init();
+  const driveState = GoogleDrive.init();
 
   // One-time migration: shapeHist text/dim `size` was stored in canvas-px;
   // now stored in typographic-pt so JSON editing is intuitive (matches slider).
@@ -1574,6 +1574,12 @@ async function initPage() {
     theme: { light: { icon: '🔩', label: 'Rust' }, dark: { icon: '⚙️', label: 'Steel' } },
   });
   render();
+
+  if (driveState.justAuthenticated) {
+    const pending = GoogleDrive.takePendingAction();
+    const btn = pending === 'backup' ? $('#driveBackup') : pending === 'restore' ? $('#driveRestore') : null;
+    if (btn) btn.click();
+  }
 }
 
 async function migrateShapeHistSizePt() {
@@ -1629,10 +1635,10 @@ if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
     if (!uuid) {
       uuid = crypto.randomUUID();
       projectInfo.projectUuid = uuid;
-      saveInfoToStorage();
+      await saveInfoToStorage(); // must land in IndexedDB before requestAuth() can navigate away
     }
     feedback('⏳ Authorizing with Google…', 'ok');
-    await GoogleDrive.requestAuth();
+    await GoogleDrive.requestAuth('backup');
     feedback('⏳ Syncing to Google Drive…', 'ok');
     const data = { tool: 'bbs', version: 2, rows, settings, projectInfo };
     const name = await GoogleDrive.save('bbs', data, uuid, projName);
@@ -1645,7 +1651,7 @@ if ($('#driveRestore')) $('#driveRestore').addEventListener('click', async () =>
   try {
     closeToolbarMenus();
     feedback('⏳ Authorizing with Google…', 'ok');
-    await GoogleDrive.requestAuth();
+    await GoogleDrive.requestAuth('restore');
     feedback('⏳ Fetching project list from Drive…', 'ok');
     const projects = await GoogleDrive.listProjects();
     const folderId = await GoogleDrive.pickProject(projects);

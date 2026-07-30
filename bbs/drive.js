@@ -9,6 +9,7 @@
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
   var TOKEN_KEY = 'bbs_gdrive_token';
   var EXPIRY_KEY = 'bbs_gdrive_token_expiry';
+  var PENDING_KEY = 'bbs_gdrive_pending_action';
   var MAK_FOLDER = 'MAK-Projects';
   var BBS_FOLDER = 'Bar-Bending-Schedule-Backups';
 
@@ -253,11 +254,27 @@
 
   window.GoogleDrive = {
     /* Init — call once on page load. Extracts token from redirect hash and
-       loads any cached token from localStorage. Returns true if a valid token
-       is now available. */
+       loads any cached token from localStorage. Returns { signedIn, justAuthenticated }:
+       justAuthenticated is true only when the token was just extracted from an
+       OAuth redirect (as opposed to a token already cached from an earlier
+       session) — that's the caller's cue to resume whatever action was stashed
+       via requestAuth(pendingAction) before the redirect. */
     init: function () {
-      if (extractTokenFromHash()) return true;
-      return loadCachedToken();
+      var justAuthenticated = extractTokenFromHash();
+      if (!justAuthenticated) loadCachedToken();
+      return { signedIn: !!accessToken, justAuthenticated: justAuthenticated };
+    },
+
+    /* Reads and clears the action name stashed by requestAuth() right before
+       an OAuth redirect (sessionStorage survives the same-tab navigation,
+       unlike in-memory JS state, which is why this is needed at all). */
+    takePendingAction: function () {
+      var v = null;
+      try {
+        v = sessionStorage.getItem(PENDING_KEY);
+        sessionStorage.removeItem(PENDING_KEY);
+      } catch (e) { /* ignore */ }
+      return v;
     },
 
     /* Check whether a valid token exists (local check, no network call). */
@@ -267,9 +284,14 @@
 
     /* Authorize: if a cached token exists and is fresh, resolve immediately.
        Otherwise redirect to Google for consent.  This never returns to the
-       calling code — the page navigates away. */
-    requestAuth: function () {
+       calling code — the page navigates away.
+       `pendingAction` ('backup' | 'restore') is stashed so init() can hand it
+       back via takePendingAction() once we return from the redirect. */
+    requestAuth: function (pendingAction) {
       if (loadCachedToken()) return Promise.resolve();
+      if (pendingAction) {
+        try { sessionStorage.setItem(PENDING_KEY, pendingAction); } catch (e) { /* ignore */ }
+      }
       oauthSignIn();
       return new Promise(function () {}); // never resolves — page redirects
     },

@@ -132,7 +132,7 @@ let projectInfo = Object.assign({}, INFO_DEFAULTS);  // populated in each page's
 async function loadInfo() {
   return Object.assign({}, INFO_DEFAULTS, (await AppDB.get('bbs_info')) ?? {});
 }
-function saveInfoToStorage() { AppDB.set('bbs_info', projectInfo); }
+function saveInfoToStorage() { return AppDB.set('bbs_info', projectInfo); }
 function applyInfoToForm() {
   $('#infoHeader').value  = projectInfo.header  || '';
   $('#infoProject').value = projectInfo.project || '';
