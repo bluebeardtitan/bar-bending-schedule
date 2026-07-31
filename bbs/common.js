@@ -127,12 +127,31 @@ function clampPage() {
    ========================================================================= */
 
 /* ---- Project info (shared IDB key 'bbs_info') ---- */
-const INFO_DEFAULTS = { header: '', project: '', agency: '', ref: '' };
+// driveProjectId: stable UUID identifying this project in Google Drive's
+// manifest.json (see drive.js). Not shown in the form; travels along with
+// the rest of projectInfo in backups/restores so a project keeps landing
+// in the same Drive folder even after being renamed or restored elsewhere.
+const INFO_DEFAULTS = { header: '', project: '', agency: '', ref: '', driveProjectId: null };
 let projectInfo = Object.assign({}, INFO_DEFAULTS);  // populated in each page's initPage()
 async function loadInfo() {
   return Object.assign({}, INFO_DEFAULTS, (await AppDB.get('bbs_info')) ?? {});
 }
 function saveInfoToStorage() { AppDB.set('bbs_info', projectInfo); }
+/* Ensure the current project has a Drive UUID, minting + persisting one on
+   first use. Call this before building the backup payload so the ID is
+   already embedded in projectInfo (and therefore in the uploaded JSON). */
+function ensureDriveProjectId() {
+  if (!projectInfo.driveProjectId) {
+    projectInfo.driveProjectId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+    saveInfoToStorage();
+  }
+  return projectInfo.driveProjectId;
+}
 function applyInfoToForm() {
   $('#infoHeader').value  = projectInfo.header  || '';
   $('#infoProject').value = projectInfo.project || '';

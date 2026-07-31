@@ -8,6 +8,22 @@
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
   var PARENT_FOLDER = 'MAK-Projects';
   var ROOT_FOLDER = 'BBS Backups';
+  var MANIFEST_NAME = 'manifest.json';
+
+  /* Projects are identified by a stable UUID (kept in projectInfo.driveProjectId
+     locally), not by folder name — see manifest.json inside ROOT_FOLDER, which
+     maps uuid -> {name, folderId, ...}. The Drive folder name is just a
+     human-readable label and is free to be truncated/renamed without breaking
+     the link, since lookups always go through the manifest by id.
+
+     Drive itself allows names up to ~32,767 characters, so that's not the real
+     ceiling — the real one is the OS path length if the user's Drive is synced
+     locally via Drive for Desktop (Windows MAX_PATH is ~260 chars total, and
+     users report trouble well before that). We don't know the local sync-root
+     prefix length from here, so budget conservatively and leave headroom for it. */
+  var LONGEST_BACKUP_FILENAME_LEN = 'xxx_backup_9999-99-99_99-99.json'.length; // 32
+  var SAFE_PATH_BUDGET = 180; // budget for "PARENT_FOLDER/ROOT_FOLDER/<project folder>/<file>", leaving ~80 chars of headroom below Windows' 260-char MAX_PATH for the local sync-root path
+  var MAX_FOLDER_NAME_LEN = Math.max(20, SAFE_PATH_BUDGET - PARENT_FOLDER.length - ROOT_FOLDER.length - LONGEST_BACKUP_FILENAME_LEN - 3 /* path separators */);
 
   var tokenClient = null;
   var accessToken = null;
@@ -112,6 +128,84 @@
     }).then(function (r) { return r.json(); });
   }
 
+  function uuid() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  /* Trim a project name down to a folder name that keeps the full Drive path
+     (including the backup filename) safely under the OS path-length budget. */
+  function truncateFolderName(name) {
+    var n = String(name || '').trim();
+    if (n.length > MAX_FOLDER_NAME_LEN) n = n.slice(0, MAX_FOLDER_NAME_LEN).trim();
+    return n || 'Unnamed Project';
+  }
+
+  function createFolder(parentId, name) {
+    return api('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+    }).then(function (r) { return r.json(); }).then(function (f) { return f.id; });
+  }
+
+  function renameFile(fileId, newName) {
+    return api('https://www.googleapis.com/drive/v3/files/' + fileId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName }),
+    }).then(function (r) { return r.json(); });
+  }
+
+  /* Returns file metadata, or null if it no longer exists / isn't accessible. */
+  function getFileMeta(fileId) {
+    return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?fields=id,trashed')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  }
+
+  function updateFileContent(fileId, jsonStr) {
+    return api('https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=media', {
+      method: 'PATCH',
+      body: jsonStr,
+      headers: { 'Content-Type': 'application/json' },
+    }).then(function (r) { return r.json(); });
+  }
+
+  function findManifestFile(rootId) {
+    var q = encodeURIComponent("name='" + MANIFEST_NAME + "' and '" + rootId + "' in parents and trashed=false");
+    return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)').then(function (r) { return r.json(); })
+      .then(function (data) { return (data.files && data.files[0] && data.files[0].id) || null; });
+  }
+
+  /* Load manifest.json from the root folder, creating an empty one if it
+     doesn't exist yet.
+     @return Promise<{manifest, fileId}> */
+  function getManifest(rootId) {
+    return findManifestFile(rootId).then(function (fileId) {
+      if (fileId) {
+        return api('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media').then(function (r) { return r.text(); })
+          .then(function (text) {
+            var manifest;
+            try { manifest = JSON.parse(text); } catch (e) { manifest = null; }
+            if (!manifest || !manifest.projects) manifest = { version: 1, projects: {} };
+            return { manifest: manifest, fileId: fileId };
+          });
+      }
+      var manifest = { version: 1, projects: {} };
+      return multipartUpload(MANIFEST_NAME, rootId, JSON.stringify(manifest, null, 2)).then(function (f) {
+        return { manifest: manifest, fileId: f.id };
+      });
+    });
+  }
+
+  function persistManifest(fileId, manifest) {
+    return updateFileContent(fileId, JSON.stringify(manifest, null, 2));
+  }
+
   /* ──────── Shared dialog helpers ──────── */
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -208,13 +302,54 @@
 
   window.GoogleDrive = {
     /* Save a JSON-serialisable object to Drive under a project subfolder.
+       Projects are keyed by a stable UUID (see manifest.json), not by name,
+       so renaming a project just relabels its existing folder instead of
+       creating a new one.
        @param label       e.g. "bbs" or "cfs"
        @param data        the object to serialise
-       @param projectName project name — used as subfolder name; required
-       @return Promise<string> — the saved file name */
-    save: function (label, data, projectName) {
-      return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
-        return ensureSubFolder(rootId, projectName || 'Unnamed Project');
+       @param projectName current display name of the project
+       @param projectId   stable per-project UUID from projectInfo.driveProjectId;
+                           pass a falsy value to have one minted here
+       @return Promise<{fileName, projectId}> */
+    save: function (label, data, projectName, projectId) {
+      var name = String(projectName || '').trim() || 'Unnamed Project';
+      var pid = projectId || uuid();
+      var rootId, manifestState;
+
+      return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rId) {
+        rootId = rId;
+        return getManifest(rootId);
+      }).then(function (state) {
+        manifestState = state;
+        var manifest = state.manifest;
+        var entry = manifest.projects[pid];
+
+        if (entry) {
+          return getFileMeta(entry.folderId).then(function (meta) {
+            if (!meta || meta.trashed) {
+              return createFolder(rootId, truncateFolderName(name)).then(function (id) {
+                entry.folderId = id;
+                entry.folderName = truncateFolderName(name);
+                return id;
+              });
+            }
+            if (entry.name !== name) {
+              var newFolderName = truncateFolderName(name);
+              return renameFile(entry.folderId, newFolderName).then(function () {
+                entry.folderName = newFolderName;
+                return entry.folderId;
+              });
+            }
+            return entry.folderId;
+          });
+        }
+
+        var folderName = truncateFolderName(name);
+        return createFolder(rootId, folderName).then(function (id) {
+          entry = { name: name, folderName: folderName, folderId: id, updatedAt: null, backupCount: 0 };
+          manifest.projects[pid] = entry;
+          return id;
+        });
       }).then(function (folderId) {
         var now = new Date();
         var ts = now.getFullYear() + '-' +
@@ -222,27 +357,31 @@
           String(now.getDate()).padStart(2, '0') + '_' +
           String(now.getHours()).padStart(2, '0') + '-' +
           String(now.getMinutes()).padStart(2, '0');
-        var name = label + '_backup_' + ts + '.json';
-        return multipartUpload(name, folderId, JSON.stringify(data, null, 2)).then(function () { return name; });
+        var fileName = label + '_backup_' + ts + '.json';
+        return multipartUpload(fileName, folderId, JSON.stringify(data, null, 2)).then(function () {
+          var entry = manifestState.manifest.projects[pid];
+          entry.name = name;
+          entry.updatedAt = now.toISOString();
+          entry.backupCount = (entry.backupCount || 0) + 1;
+          return persistManifest(manifestState.fileId, manifestState.manifest).then(function () {
+            return { fileName: fileName, projectId: pid };
+          });
+        });
       });
     },
 
-    /* List project subfolders under the root folder.
-       @return Promise<Array<{id,name,createdTime,fileCount}>> */
+    /* List projects from manifest.json.
+       @return Promise<Array<{id,name,createdTime,fileCount}>> — id is the
+               Drive folder ID (same shape pickProject/listBackups expect) */
     listProjects: function () {
       return ensureToken().then(function () { return ensureRootFolder(); }).then(function (rootId) {
-        var q = encodeURIComponent("'" + rootId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false");
-        return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,createdTime)&orderBy=name')
-          .then(function (r) { return r.json(); });
-      }).then(function (data) {
-        var folders = data.files || [];
-        var qs = folders.map(function (f) {
-          var q = encodeURIComponent("'" + f.id + "' in parents and trashed=false");
-          return api('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id)&pageSize=1')
-            .then(function (r) { return r.json(); })
-            .then(function (d) { f.fileCount = (d.files || []).length; return f; });
-        });
-        return Promise.all(qs);
+        return getManifest(rootId);
+      }).then(function (state) {
+        var projects = state.manifest.projects;
+        return Object.keys(projects).map(function (id) {
+          var e = projects[id];
+          return { id: e.folderId, name: e.name, createdTime: e.updatedAt, fileCount: e.backupCount || 0 };
+        }).sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
       });
     },
 

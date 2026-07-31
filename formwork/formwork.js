@@ -1151,9 +1151,11 @@ if ($('#driveBackup')) $('#driveBackup').addEventListener('click', async () => {
       feedback('✖ Set the Name of Work in Project Info before backing up to Drive', 'err');
       return;
     }
+    const projectId = ensureDriveProjectId();
     const data = { tool: 'cfs', version: 1, rows, settings, projectInfo };
-    const name = await GoogleDrive.save('cfs', data, projName);
-    feedback(`✔ Backed up to Drive: ${name}`, 'ok');
+    const result = await GoogleDrive.save('cfs', data, projName, projectId);
+    if (result.projectId !== projectId) { projectInfo.driveProjectId = result.projectId; saveInfoToStorage(); }
+    feedback(`✔ Backed up to Drive: ${result.fileName}`, 'ok');
   } catch (e) {
     if (e.message !== 'canceled') feedback(`✖ Drive backup failed: ${e.message}`, 'err');
   }
