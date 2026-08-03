@@ -1423,10 +1423,17 @@ $('#printBBS').addEventListener('click', async () => {
       y += wRowH;
       pdf.setLineWidth(0.4); pdf.line(margin, y, margin + wTableW, y);
 
-      y += lineH + 2;
-      pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
-      pdf.text(sani(`Total weight ≈ ${fmt3(wTot.totalWtKg/1000)} MT (metric tonnes)`),
-               margin, y, { baseline:'top' });
+      // ── Total weight bar (metric tonnes) — the procurement figure ──
+      y += lineH;
+      if (y + wRowH > pageH - margin) { pdf.addPage(); y = margin; }
+      const totTxt = `Total weight: ${fmt3(wTot.totalWtKg/1000)} MT (metric tonnes)`;
+      pdf.setFillColor(192, 82, 42);
+      pdf.rect(margin, y, wTableW, wRowH, 'F');
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize + 1);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(totTxt, margin + pad, y + pad, { baseline:'top' });
+      pdf.setTextColor(0, 0, 0);
+      y += wRowH;
     }
 
     // ── Page-number footers ──
