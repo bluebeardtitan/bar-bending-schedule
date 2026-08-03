@@ -418,26 +418,29 @@
           </tr></tfoot>
         </table>
       </div>
-      <div id="wastageSummary" class="wastage-summary">
-        <h3>Rebar Wastage <span class="ws-sub">stock bar = 12 m · optimised cutting (FFD), grouped by Ø</span></h3>
+      <div id="wtSynopsis" class="wt-synopsis">
+        <h3>Bar Weight Synopsis <span class="ws-sub">per diameter · total in metric tonnes</span></h3>
         <div style="overflow:auto">
-          <table id="wastageTable">
+          <table id="wtSynTable">
             <thead><tr>
-              <th>Φ (mm)</th><th>Bars</th><th>Stock Bars (12 m)</th>
-              <th>Waste (m)</th><th>Waste (kg)</th><th>Waste %</th>
+              <th>Φ (mm)</th><th>No. of Bars</th><th>Total L (m)</th>
+              <th>Wt/m (kg)</th><th>Total Wt (kg)</th><th>% of total</th>
             </tr></thead>
-            <tbody id="wastageBody"></tbody>
+            <tbody id="diaWeightBody"></tbody>
             <tfoot><tr>
               <td class="right">Total:</td>
+              <td class="mono right" id="dwBars">0</td>
+              <td class="mono right" id="dwLen">0.000</td>
               <td></td>
-              <td class="mono right" id="wstStock">0</td>
-              <td class="mono right" id="wstWasteM">0.000</td>
-              <td class="mono right" id="wstWasteKg">0.000</td>
-              <td class="mono right" id="wstPct">0.0%</td>
+              <td class="mono right" id="dwKg">0.000</td>
+              <td class="mono right" id="dwPct">100%</td>
             </tr></tfoot>
           </table>
         </div>
-        <div id="wstNote" class="ws-note" style="display:none"></div>
+        <div class="wt-tot">
+          <span class="wt-tot-label">Total reinforcement weight</span>
+          <span class="wt-tot-val">≈ <span id="dwMT">0.000</span> <small>MT</small></span>
+        </div>
       </div>
     </div>
     <div class="footer">CL values are per-bar. Edit any row with ✏️. Drag rows to reorder.</div>

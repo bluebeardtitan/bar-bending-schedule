@@ -35,53 +35,30 @@ function unitWeightKgPerM(dia){
 }
 
 /* =========================
-   Rebar wastage (1-D cutting-stock)
-   Each bar's straight cutting length (clPerBarMm) is a piece cut from a standard
-   stock bar. Pieces are grouped by diameter (a Ø16 piece can't come from a Ø12
-   stock bar) and packed into STOCK_MM-long bars using First-Fit-Decreasing —
-   place the longest piece first into the first bar that still has room, else open
-   a new bar. Leftover capacity across all opened bars is the wastage. Pieces
-   longer than a stock bar can't be cut from one length (they need lapping) and
-   are reported separately, not packed.
+   Bar weight synopsis (per-diameter)
+   Every bar's weight (totalWtKg) is pooled by its diameter and rolled up into a
+   single figure per Ø, plus an overall total. Wt/m is derived from the pooled
+   figures (kg per metre of total length), so it reflects the actual schedule.
+   The grand total is quoted in metric tonnes (MT) — how reinforcement steel is
+   procured — while per-diameter weights stay in kg to match the schedule table.
    ========================= */
-const STOCK_MM = 12000;
-function computeWastage(rowList){
+function computeDiaWeight(rowList){
   const byDia = new Map();
   (rowList||[]).forEach(r=>{
-    const cl = Number(r.clPerBarMm)||0, q = Number(r.qty)||0;
-    if(cl<=0 || q<=0) return;
-    if(!byDia.has(r.dia)) byDia.set(r.dia, {
-      dia:r.dia, wtPerM:Number(r.unitWtKgPerM)||unitWeightKgPerM(r.dia), pieces:[], over:0
-    });
+    const q = Number(r.qty)||0, tLen = Number(r.totalLenM)||0, tWt = Number(r.totalWtKg)||0;
+    if(q<=0 || tWt<=0) return;
+    if(!byDia.has(r.dia)) byDia.set(r.dia, { dia:r.dia, barCount:0, totalLenM:0, totalWtKg:0 });
     const g = byDia.get(r.dia);
-    if(cl > STOCK_MM){ g.over += q; return; }   // longer than stock → needs lapping
-    for(let i=0;i<q;i++) g.pieces.push(cl);
+    g.barCount += q; g.totalLenM += tLen; g.totalWtKg += tWt;
   });
-  const groups = [];
-  byDia.forEach(g=>{
-    g.pieces.sort((a,b)=>b-a);                  // FFD: longest piece first
-    const bins = [];                            // remaining capacity (mm) per stock bar
-    g.pieces.forEach(p=>{
-      const bin = bins.find(b=>b.rem >= p);
-      if(bin) bin.rem -= p; else bins.push({ rem: STOCK_MM - p });
-    });
-    const stockBars = bins.length;
-    const usedMm    = g.pieces.reduce((a,b)=>a+b, 0);
-    const stockMm   = stockBars * STOCK_MM;
-    const wasteMm   = stockMm - usedMm;
-    groups.push({
-      dia:g.dia, barCount:g.pieces.length, stockBars, over:g.over,
-      usedM:usedMm/1000, stockM:stockMm/1000, wasteM:wasteMm/1000,
-      wasteKg:(wasteMm/1000)*g.wtPerM,
-      wastePct: stockMm ? (wasteMm/stockMm)*100 : 0,
-    });
-  });
-  groups.sort((a,b)=>a.dia-b.dia);
+  const groups = [...byDia.values()].sort((a,b)=>a.dia-b.dia);
+  groups.forEach(g=>{ g.unitWt = g.totalLenM ? g.totalWtKg/g.totalLenM : 0; });
   const total = groups.reduce((a,g)=>({
-    stockBars:a.stockBars+g.stockBars, usedM:a.usedM+g.usedM, stockM:a.stockM+g.stockM,
-    wasteM:a.wasteM+g.wasteM, wasteKg:a.wasteKg+g.wasteKg, over:a.over+g.over,
-  }), { stockBars:0, usedM:0, stockM:0, wasteM:0, wasteKg:0, over:0 });
-  total.wastePct = total.stockM ? (total.wasteM/total.stockM)*100 : 0;
+    barCount:a.barCount+g.barCount, totalLenM:a.totalLenM+g.totalLenM,
+    totalWtKg:a.totalWtKg+g.totalWtKg,
+  }), { barCount:0, totalLenM:0, totalWtKg:0 });
+  total.unitWt = total.totalLenM ? total.totalWtKg/total.totalLenM : 0;
+  groups.forEach(g=>{ g.wtPct = total.totalWtKg ? (g.totalWtKg/total.totalWtKg)*100 : 0; });
   return { groups, total };
 }
 
@@ -258,36 +235,30 @@ function recalcSums(filtered){
   const total = rows.length;
   const shown = items.length;
   $('#countBadge').textContent = shown < total ? `${shown} / ${total} item${total!==1?'s':''}` : `${total} item${total!==1?'s':''}`;
-  renderWastage();
+  renderDiaWeight();
 }
 
-/* Rebar wastage summary — always computed over the full schedule (not the
-   filtered/paged view), since cutting optimisation pools every bar of a Ø. */
-function renderWastage(){
-  const body = $('#wastageBody'); if(!body) return;
-  const { groups, total } = computeWastage(rows);
+/* Bar weight synopsis — always computed over the full schedule (not the
+   filtered/paged view), since a procured steel order covers every bar. */
+function renderDiaWeight(){
+  const body = $('#diaWeightBody'); if(!body) return;
+  const { groups, total } = computeDiaWeight(rows);
   body.innerHTML = groups.length
     ? groups.map(g=>`
       <tr>
         <td class="mono right">${g.dia}</td>
         <td class="mono right">${g.barCount}</td>
-        <td class="mono right">${g.stockBars}</td>
-        <td class="mono right">${fmt3(g.wasteM)}</td>
-        <td class="mono right">${fmt3(g.wasteKg)}</td>
-        <td class="mono right">${g.wastePct.toFixed(1)}%</td>
+        <td class="mono right">${fmt3(g.totalLenM)}</td>
+        <td class="mono right">${fmt3(g.unitWt)}</td>
+        <td class="mono right">${fmt3(g.totalWtKg)}</td>
+        <td class="mono right">${g.wtPct.toFixed(1)}%</td>
       </tr>`).join('')
     : `<tr><td colspan="6" class="right" style="text-align:center;color:var(--muted)">No bars yet</td></tr>`;
-  $('#wstStock').textContent  = total.stockBars;
-  $('#wstWasteM').textContent = fmt3(total.wasteM);
-  $('#wstWasteKg').textContent= fmt3(total.wasteKg);
-  $('#wstPct').textContent    = `${total.wastePct.toFixed(1)}%`;
-  const note = $('#wstNote');
-  if(note){
-    note.style.display = total.over ? '' : 'none';
-    note.textContent = total.over
-      ? `⚠ ${total.over} bar${total.over!==1?'s':''} exceed the ${STOCK_MM/1000} m stock length and need lapping — excluded from wastage packing.`
-      : '';
-  }
+  $('#dwBars').textContent  = total.barCount;
+  $('#dwLen').textContent   = fmt3(total.totalLenM);
+  $('#dwKg').textContent    = fmt3(total.totalWtKg);
+  $('#dwMT').textContent    = fmt3(total.totalWtKg/1000);
+  $('#dwPct').textContent   = '100%';
 }
 /* Thumbnail/preview source for a row's shape — vector (SVG) preferred, raster fallback. */
 function shapeSrc(r){
@@ -855,26 +826,25 @@ function toCSV(){
 
   lines.push(Papa.unparse(data, { newline: '\r\n' }));
 
-  // ── Wastage block (optimised cutting from 12 m stock bars, grouped by Ø) ──
-  const { groups: wg, total: wt } = computeWastage(rows);
+  // ── Bar weight synopsis (per diameter, total in metric tonnes) ──
+  const { groups: wg, total: wt } = computeDiaWeight(rows);
   if (wg.length) {
     lines.push('');
-    lines.push(`REBAR WASTAGE (stock bar = ${STOCK_MM/1000} m; FFD optimised; grouped by diameter)`);
+    lines.push('BAR WEIGHT SYNOPSIS (per diameter; total in metric tonnes)');
     const wData = wg.map(g => ({
       'Ø (mm)': g.dia,
-      Bars: g.barCount,
-      'Stock Bars': g.stockBars,
-      'Waste (m)': fmt3(g.wasteM),
-      'Waste (kg)': fmt3(g.wasteKg),
-      'Waste %': `${g.wastePct.toFixed(1)}%`,
+      'No. of Bars': g.barCount,
+      'Total L (m)': fmt3(g.totalLenM),
+      'Wt/m (kg)': fmt3(g.unitWt),
+      'Total Wt (kg)': fmt3(g.totalWtKg),
+      '% of total': `${g.wtPct.toFixed(1)}%`,
     }));
     wData.push({
-      'Ø (mm)': 'Total', Bars: '', 'Stock Bars': wt.stockBars,
-      'Waste (m)': fmt3(wt.wasteM), 'Waste (kg)': fmt3(wt.wasteKg),
-      'Waste %': `${wt.wastePct.toFixed(1)}%`,
+      'Ø (mm)': 'Total', 'No. of Bars': wt.barCount, 'Total L (m)': fmt3(wt.totalLenM),
+      'Wt/m (kg)': '', 'Total Wt (kg)': fmt3(wt.totalWtKg), '% of total': '100%',
     });
     lines.push(Papa.unparse(wData, { newline: '\r\n' }));
-    if (wt.over) lines.push(`Note,${wt.over} bar(s) exceed stock length and need lapping (excluded)`);
+    lines.push(`Total weight (metric tonnes),${fmt3(wt.totalWtKg/1000)} MT`);
   }
 
   return lines.join('\r\n');
@@ -1409,21 +1379,21 @@ $('#printBBS').addEventListener('click', async () => {
     pdf.line(margin, y + totH, margin + usableW, y + totH);
     y += totH;
 
-    // ── Rebar wastage summary (optimised cutting from 12 m stock bars) ──
-    const { groups: wGroups, total: wTot } = computeWastage(rows);
+    // ── Bar weight synopsis (per diameter, total in metric tonnes) ──
+    const { groups: wGroups, total: wTot } = computeDiaWeight(rows);
     if (wGroups.length) {
       const wRowH = lineH + 2 * pad;
       y += 10;
       if (y + wRowH * 3 > pageH - margin) { pdf.addPage(); y = margin; }
 
       pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize + 1); pdf.setTextColor(0,0,0);
-      pdf.text(sani(`Rebar Wastage  (stock bar = ${STOCK_MM/1000} m, FFD optimised, grouped by Ø)`),
+      pdf.text('Bar Weight Synopsis  (per diameter, total in metric tonnes)',
                margin, y, { baseline:'top' });
       y += lineH + 4;
 
       const wc = [
-        { t:'Ø (mm)', w:24 }, { t:'Bars', w:22 }, { t:'Stock Bars', w:32 },
-        { t:'Waste (m)', w:30 }, { t:'Waste (kg)', w:30 }, { t:'Waste %', w:24 },
+        { t:'Ø (mm)', w:26 }, { t:'Bars', w:26 }, { t:'Total L (m)', w:36 },
+        { t:'Wt/m (kg)', w:36 }, { t:'Total Wt (kg)', w:40 }, { t:'%', w:22 },
       ];
       let wx = margin; wc.forEach(c => { c.x = wx; wx += c.w; });
       const wTableW = wx - margin;
@@ -1441,24 +1411,22 @@ $('#printBBS').addEventListener('click', async () => {
 
       wGroups.forEach(g => {
         if (y + wRowH > pageH - margin) { pdf.addPage(); y = margin; }
-        const vals = [g.dia, g.barCount, g.stockBars, fmt3(g.wasteM), fmt3(g.wasteKg), `${g.wastePct.toFixed(1)}%`];
+        const vals = [g.dia, g.barCount, fmt3(g.totalLenM), fmt3(g.unitWt), fmt3(g.totalWtKg), `${g.wtPct.toFixed(1)}%`];
         wc.forEach((c,i) => wCell(c, vals[i], y, false));
         pdf.setLineWidth(0.06); pdf.line(margin, y + wRowH, margin + wTableW, y + wRowH);
         y += wRowH;
       });
 
-      const tv = ['Total', '', wTot.stockBars, fmt3(wTot.wasteM), fmt3(wTot.wasteKg), `${wTot.wastePct.toFixed(1)}%`];
+      const tv = ['Total', wTot.barCount, fmt3(wTot.totalLenM), '', fmt3(wTot.totalWtKg), '100%'];
       pdf.setLineWidth(0.3); pdf.line(margin, y, margin + wTableW, y);
       wc.forEach((c,i) => wCell(c, tv[i], y, true));
       y += wRowH;
       pdf.setLineWidth(0.4); pdf.line(margin, y, margin + wTableW, y);
 
-      if (wTot.over) {
-        y += lineH + 2;
-        pdf.setFont('helvetica','italic'); pdf.setFontSize(fontSize - 1);
-        pdf.text(sani(`${wTot.over} bar(s) exceed the stock length and need lapping (excluded).`),
-                 margin, y, { baseline:'top' });
-      }
+      y += lineH + 2;
+      pdf.setFont('helvetica','bold'); pdf.setFontSize(fontSize);
+      pdf.text(sani(`Total weight ≈ ${fmt3(wTot.totalWtKg/1000)} MT (metric tonnes)`),
+               margin, y, { baseline:'top' });
     }
 
     // ── Page-number footers ──

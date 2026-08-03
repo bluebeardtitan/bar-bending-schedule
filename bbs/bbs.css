@@ -260,12 +260,15 @@ tfoot td{border-top:2px solid var(--border);font-weight:700}
 .dragging{opacity:.45}
 .drag-over{border-top:2px solid var(--brand)}
 
-/* ---- Rebar wastage summary ---- */
-.wastage-summary{margin-top:20px}
-.wastage-summary h3{margin:0 0 8px;font-size:14px;font-weight:700}
-.wastage-summary h3 .ws-sub{font-size:11px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0}
-#wastageTable{max-width:560px}
-.wastage-summary .ws-note{margin-top:6px;font-size:12px;color:var(--warn)}
+/* ---- Bar weight synopsis (per diameter, total in MT) ---- */
+.wt-synopsis{margin-top:20px}
+.wt-synopsis h3{margin:0 0 8px;font-size:14px;font-weight:700}
+.wt-synopsis h3 .ws-sub{font-size:11px;font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0}
+#wtSynTable{max-width:600px}
+.wt-tot{margin-top:10px;display:flex;align-items:baseline;gap:10px;width:max-content;max-width:100%;border-left:3px solid var(--brand);background:var(--chip);border-radius:6px;padding:8px 16px}
+.wt-tot-label{font-size:12px;color:var(--muted)}
+.wt-tot-val{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--brand);white-space:nowrap}
+.wt-tot-val small{font-size:12px;font-weight:700;color:var(--brand)}
 
 /* ---- Print header (hidden on screen) ---- */
 #printWrapper{display:block}
@@ -523,10 +526,13 @@ dialog::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(2px)}
   #bbsTable tbody tr td:last-child{display:none!important}
   #bbsTable tbody tr td img{max-width:65px!important;max-height:45px!important;object-fit:contain!important}
 
-  .wastage-summary{margin-top:14px!important;page-break-inside:avoid}
-  .wastage-summary h3{font-size:12px!important;color:#000!important}
-  .wastage-summary h3 .ws-sub{color:#444!important}
-  #wastageTable{width:auto!important;border-collapse:collapse!important;font-size:10px!important;color:#000!important;background:#fff!important}
-  #wastageTable th,#wastageTable td{border:1px solid #000!important;padding:5px 6px!important;color:#000!important;background:#fff!important}
-  .wastage-summary .ws-note{color:#000!important}
+  .wt-synopsis{margin-top:14px!important;page-break-inside:avoid}
+  .wt-synopsis h3{font-size:12px!important;color:#000!important}
+  .wt-synopsis h3 .ws-sub{color:#444!important}
+  #wtSynTable{width:auto!important;border-collapse:collapse!important;font-size:10px!important;color:#000!important;background:#fff!important}
+  #wtSynTable th,#wtSynTable td{border:1px solid #000!important;padding:5px 6px!important;color:#000!important;background:#fff!important}
+  .wt-tot{border:1px solid #000!important;background:#fff!important}
+  .wt-tot-label{color:#000!important}
+  .wt-tot-val{color:#000!important}
+  .wt-tot-val small{color:#000!important}
 }
