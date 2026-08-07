@@ -7,7 +7,7 @@
   var CLIENT_ID_B64 = 'MTA2NzA3NTQ5NTIwMC1wMGhhdXJuanRwMzJvZm51YWVuNzQ5NzBybDN1OHY1di5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==';
   var SCOPES = 'https://www.googleapis.com/auth/drive.file';
   var PARENT_FOLDER = 'MAK-Projects';
-  var ROOT_FOLDER = 'BBS Backups';
+  var ROOT_FOLDER = 'BBS-Backups';
   var MANIFEST_NAME = 'manifest.json';
 
   /* Projects are identified by a stable UUID (kept in projectInfo.driveProjectId
@@ -86,7 +86,7 @@
       });
   }
 
-  /* Find or create the root 'MAK-Projects/BBS Backups' folder path. */
+  /* Find or create the root 'MAK-Projects/BBS-Backups' folder path. */
   function ensureRootFolder() {
     return ensureTopFolder(PARENT_FOLDER).then(function (parentId) {
       return ensureSubFolder(parentId, ROOT_FOLDER);
