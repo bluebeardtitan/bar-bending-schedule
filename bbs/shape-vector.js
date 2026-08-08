@@ -23,6 +23,7 @@
 
   const BAR_COL = '#000';
   const DIM_COL = '#000';
+  const DEFAULT_LW = 1.4;
 
   const num = (n) => (Math.round(n * 100) / 100);
 
@@ -35,7 +36,7 @@
     const parts = [];
     for (const e of model.el) {
       const col = e.col || (e.k === 'fill' ? dimCol : barCol);
-      const lw  = e.lw != null ? e.lw : 1.4;
+      const lw  = e.lw != null ? e.lw : DEFAULT_LW;
       const cap = 'stroke-linecap="round" stroke-linejoin="round"';
       const dash = e.dash ? ' stroke-dasharray="4 3"' : '';
       switch (e.k) {
@@ -111,7 +112,7 @@
     if (pdf.setLineJoin) pdf.setLineJoin('round');
     const mx = x => ox + x * scale;
     const my = y => oy + y * scale;
-    const mlw = lw => Math.max(0.15, (lw != null ? lw : 1.4) * scale);
+    const mlw = lw => Math.max(0.15, (lw != null ? lw : DEFAULT_LW) * scale);
 
     const hex = c => {
       let s = (c || '').replace('#', '');
@@ -121,6 +122,15 @@
       const n = parseInt(m[1], 16);
       return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     };
+
+    // Consecutive offsets from the first point — the form jsPDF's `lines`
+    // expects for both stroked polylines and filled polygons.
+    function polylineDeltas(pts, mx, my) {
+      const deltas = [];
+      for (let i = 1; i < pts.length; i++)
+        deltas.push([mx(pts[i][0]) - mx(pts[i - 1][0]), my(pts[i][1]) - my(pts[i - 1][1])]);
+      return deltas;
+    }
 
     for (const e of model.el) {
       const col = e.col || (e.k === 'fill' ? DIM_COL : BAR_COL);
@@ -133,10 +143,7 @@
       switch (e.k) {
         case 'path': {
           if (!e.d || e.d.length < 2) break;
-          const deltas = [];
-          for (let i = 1; i < e.d.length; i++)
-            deltas.push([mx(e.d[i][0]) - mx(e.d[i - 1][0]), my(e.d[i][1]) - my(e.d[i - 1][1])]);
-          pdf.lines(deltas, mx(e.d[0][0]), my(e.d[0][1]), [1, 1], 'S', !!e.cl);
+          pdf.lines(polylineDeltas(e.d, mx, my), mx(e.d[0][0]), my(e.d[0][1]), [1, 1], 'S', !!e.cl);
           break;
         }
         case 'bez': {
@@ -164,10 +171,7 @@
           break;
         case 'fill': {
           if (!e.d || e.d.length < 2) break;
-          const deltas = [];
-          for (let i = 1; i < e.d.length; i++)
-            deltas.push([mx(e.d[i][0]) - mx(e.d[i - 1][0]), my(e.d[i][1]) - my(e.d[i - 1][1])]);
-          pdf.lines(deltas, mx(e.d[0][0]), my(e.d[0][1]), [1, 1], 'F', true);
+          pdf.lines(polylineDeltas(e.d, mx, my), mx(e.d[0][0]), my(e.d[0][1]), [1, 1], 'F', true);
           break;
         }
         case 'text': {

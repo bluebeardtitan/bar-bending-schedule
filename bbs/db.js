@@ -1,4 +1,4 @@
-/* AppDB — IndexedDB key-value store shared by BBS and CFS pages.
+/* AppDB — IndexedDB key-value store for the BBS page.
    Database: 'bbs_app' v1, object store 'kv'. Values stored as-is (no JSON). */
 (function () {
   'use strict';

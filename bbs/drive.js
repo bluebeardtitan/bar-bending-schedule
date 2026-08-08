@@ -305,7 +305,7 @@
        Projects are keyed by a stable UUID (see manifest.json), not by name,
        so renaming a project just relabels its existing folder instead of
        creating a new one.
-       @param label       e.g. "bbs" or "cfs"
+       @param label       e.g. "bbs"
        @param data        the object to serialise
        @param projectName current display name of the project
        @param projectId   stable per-project UUID from projectInfo.driveProjectId;

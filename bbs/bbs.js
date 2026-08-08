@@ -176,6 +176,50 @@ const CLcalc = {
   }
 };
 
+/* Map a shape's saved raw inputs (row.inputs) to the argument object the CL /
+   CLcalc calculators expect, injecting the bar diameter. Mirrors the form's
+   field layout so submit and recalcRow share one mapping. */
+function shapeArgs(shape, dims, dia){
+  switch(shape){
+    case 'straight':   return {len:Number(dims.len)};
+    case 'L':          return {A:Number(dims.A),B:Number(dims.B),angle:Number(dims.angle),dia};
+    case 'U':          return {A:Number(dims.A),B:Number(dims.B),C:Number(dims.C),dia};
+    case 'stirrup':    return dims.type==='circle'
+      ? {A:0,B:0,diaCirc:Number(dims.diaCirc),cover:Number(dims.cover),angle:Number(dims.angle),dia,type:dims.type}
+      : {A:Number(dims.A),B:Number(dims.B),cover:Number(dims.cover),angle:Number(dims.angle),dia,type:dims.type};
+    case 'circle':     return {dia:Number(dims.diaVal),diaBar:dia};
+    case 'spiral':     return {dia:Number(dims.diaVal),pitch:Number(dims.pitch),turns:Number(dims.turns),diaBar:dia};
+    case 'crank':      return {span:Number(dims.span),depth:Number(dims.depth),angle:Number(dims.angle),dia};
+    case 'chair':      return {height:Number(dims.height),top:Number(dims.top),base:Number(dims.base),dia};
+    case 'hook-semi':  return {len:Number(dims.len),ends:dims.ends,dia};
+    case 'hook-L':     return {len:Number(dims.len),ends:dims.ends,dia};
+    case 'custom':     return {items:(dims.items||[]).filter(x=>x.type!=='deleted'),dia};
+    default:           return null;
+  }
+}
+
+/* Human-readable label for the schedule's Shape column. */
+function shapeLabelFor(shape, dims){
+  const angle = Number(dims.angle)||0;
+  switch(shape){
+    case 'straight':  return 'Straight';
+    case 'L':         return `L (${angle}°)`;
+    case 'U':         return 'U';
+    case 'stirrup':{
+      const labels={2:'2-Legged',4:'4-Legged','4-master':'4-Legged Master Ring',circle:'Circular',diamond:'Diamond','2-diamond':'2-Legged Rect + Diamond'};
+      return `Stirrup ${labels[dims.type]||dims.type}`;
+    }
+    case 'circle':    return `Circle ⌀${Number(dims.diaVal)}`;
+    case 'spiral':    return `Spiral ⌀${Number(dims.diaVal)} (${Number(dims.turns)} turns)`;
+    case 'crank':     return `Crank ${angle}°`;
+    case 'chair':     return `Chair ${Number(dims.height)}h`;
+    case 'hook-semi': return `Straight 180° hook (${dims.ends==='both'?'both ends':'one end'})`;
+    case 'hook-L':    return `Straight 90° hook (${dims.ends==='both'?'both ends':'one end'})`;
+    case 'custom':    return 'Other shape';
+    default:          return '';
+  }
+}
+
 /* Rebuild a stored row's cutting length, CL working and weights from its saved
    raw inputs using the CURRENT settings (bend deductions, hook lengths, unit-
    weight method/density) — mirrors the form-submit math but reads row.inputs
@@ -184,21 +228,8 @@ const CLcalc = {
 function recalcRow(row){
   if(!row || !row.inputs || !CL[row.shape]) return false;
   const dia = row.dia, shape = row.shape, ip = row.inputs;
-  let a;
-  if(shape==='straight')       a={len:ip.len};
-  else if(shape==='L')         a={A:ip.A,B:ip.B,angle:ip.angle,dia};
-  else if(shape==='U')         a={A:ip.A,B:ip.B,C:ip.C,dia};
-  else if(shape==='stirrup')   a = ip.type==='circle'
-    ? {A:0,B:0,diaCirc:ip.diaCirc,cover:ip.cover,angle:ip.angle,dia,type:ip.type}
-    : {A:ip.A,B:ip.B,cover:ip.cover,angle:ip.angle,dia,type:ip.type};
-  else if(shape==='circle')    a={dia:ip.diaVal,diaBar:dia};
-  else if(shape==='spiral')    a={dia:ip.diaVal,pitch:ip.pitch,turns:ip.turns,diaBar:dia};
-  else if(shape==='crank')     a={span:ip.span,depth:ip.depth,angle:ip.angle,dia};
-  else if(shape==='chair')     a={height:ip.height,top:ip.top,base:ip.base,dia};
-  else if(shape==='hook-semi') a={len:ip.len,ends:ip.ends,dia};
-  else if(shape==='hook-L')    a={len:ip.len,ends:ip.ends,dia};
-  else if(shape==='custom')    a={items:(ip.items||[]).filter(x=>x.type!=='deleted'),dia};
-  else return false;
+  const a = shapeArgs(shape, ip, dia);
+  if(!a) return false;
 
   let cl;
   try { cl = CL[shape](a); } catch(_) { return false; }
@@ -226,6 +257,30 @@ let navPersistTimer = null, submitBtnTimer = null, lastEditedIndex = -1;
 let searchTerm = '', pageSize = 25;
 
 const persist = makePersist('bbs_rows');
+
+const SUBMIT_RESET_MS = 5000, NAV_RESET_MS = 5000;
+function flashSubmitButton(verb){
+  const submitBtn=document.querySelector('.submit-btn');
+  if(!submitBtn) return;
+  submitBtn.textContent = verb === 'Added' ? '✅ Added!' : '✅ Updated!';
+  submitBtn.classList.add('active');
+  submitBtn.disabled = true;
+  if (submitBtnTimer) { clearTimeout(submitBtnTimer); submitBtnTimer = null }
+  submitBtnTimer = setTimeout(() => {
+    submitBtnTimer = null
+    submitBtn.textContent = '➕ Add to Schedule';
+    submitBtn.classList.remove('active');
+    submitBtn.disabled = false;
+  }, SUBMIT_RESET_MS);
+}
+function scheduleNavReset(){
+  if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
+  navPersistTimer = setTimeout(() => {
+    navPersistTimer = null
+    lastEditedIndex = -1
+    updateRecordNav()
+  }, NAV_RESET_MS);
+}
 function recalcSums(filtered){
   const items = filtered || rows;
   let sumLen=0, sumWt=0;
@@ -461,7 +516,6 @@ function updateCustomPreview(){
 }
 
 /* Reset button */
-$('#reset').setAttribute('type','button');
 $('#reset').addEventListener('click', ()=>location.reload());
 
 /* =========================
@@ -477,57 +531,40 @@ $('#barForm').addEventListener('submit', e=>{
   const grade   = $('#grade').value;
   const qtyMode = $('#qtyMode').value;
 
-  let cl=0, clCalc='', shapeLabel='';
-  if(shape==='straight'){
-    const a={len:Number($('#straightLen').value)};
-    cl=CL.straight(a); clCalc=CLcalc.straight(a); shapeLabel='Straight';
-  }else if(shape==='L'){
-    const a={A:Number($('#L_A').value),B:Number($('#L_B').value),angle:Number($('#L_angle').value),dia};
-    cl=CL.L(a); clCalc=CLcalc.L(a); shapeLabel=`L (${a.angle}°)`;
-  }else if(shape==='U'){
-    const a={A:Number($('#U_A').value),B:Number($('#U_B').value),C:Number($('#U_C').value),dia};
-    cl=CL.U(a); clCalc=CLcalc.U(a); shapeLabel='U';
-  }else if(shape==='stirrup'){
+  // Read raw inputs (persisted for re-editing and Recalculate)…
+  let inputs;
+  if(shape==='straight')       inputs={len:Number($('#straightLen').value)};
+  else if(shape==='L')         inputs={A:Number($('#L_A').value),B:Number($('#L_B').value),angle:Number($('#L_angle').value)};
+  else if(shape==='U')         inputs={A:Number($('#U_A').value),B:Number($('#U_B').value),C:Number($('#U_C').value)};
+  else if(shape==='stirrup'){
     const type=$('#S_type').value, cover=Number($('#S_cover').value), angle=Number($('#S_angle').value);
-    let a;
-    if(type==='circle'){ a={A:0,B:0,diaCirc:Number($('#S_diaCirc').value),cover,angle,dia,type}; }
-    else{ a={A:Number($('#S_A').value),B:Number($('#S_B').value),cover,angle,dia,type}; }
-    const labels={2:'2-Legged',4:'4-Legged','4-master':'4-Legged Master Ring',circle:'Circular',diamond:'Diamond','2-diamond':'2-Legged Rect + Diamond'};
-    cl=CL.stirrup(a); clCalc=CLcalc.stirrup(a); shapeLabel=`Stirrup ${labels[type]||type}`;
-  }else if(shape==='circle'){
-    const diaVal=Number($('#C_dia').value), a={dia:diaVal,diaBar:dia};
-    cl=CL.circle(a); clCalc=CLcalc.circle(a); shapeLabel=`Circle ⌀${diaVal}`;
-  }else if(shape==='spiral'){
-    const diaVal=Number($('#SP_dia').value),turns=Number($('#SP_turns').value);
-    const a={dia:diaVal,pitch:Number($('#SP_pitch').value),turns,diaBar:dia};
-    cl=CL.spiral(a); clCalc=CLcalc.spiral(a); shapeLabel=`Spiral ⌀${diaVal} (${turns} turns)`;
-  }else if(shape==='crank'){
-    const a={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value),dia};
-    cl=CL.crank(a); clCalc=CLcalc.crank(a); shapeLabel=`Crank ${a.angle}°`;
-  }else if(shape==='chair'){
-    const a={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value),dia};
-    cl=CL.chair(a); clCalc=CLcalc.chair(a); shapeLabel=`Chair ${a.height}h`;
-  }else if(shape==='hook-semi'){
-    const a={len:Number($('#HS_len').value),ends:$('#HS_ends').value,dia};
-    cl=CL['hook-semi'](a); clCalc=CLcalc['hook-semi'](a);
-    shapeLabel=`Straight 180° hook (${a.ends==='both'?'both ends':'one end'})`;
-  }else if(shape==='hook-L'){
-    const a={len:Number($('#HL_len').value),ends:$('#HL_ends').value,dia};
-    cl=CL['hook-L'](a); clCalc=CLcalc['hook-L'](a);
-    shapeLabel=`Straight 90° hook (${a.ends==='both'?'both ends':'one end'})`;
-  }else if(shape==='custom'){
-    const a={items:customItems.filter(x=>x.type!=='deleted'),dia};
-    cl=CL.custom(a); clCalc=CLcalc.custom(a); const cc=$('#customCalc').value.trim(); if(cc) clCalc=cc; shapeLabel='Other shape';
+    inputs={type,cover,angle};
+    if(type==='circle'){ inputs.diaCirc=Number($('#S_diaCirc').value); }
+    else{ inputs.A=Number($('#S_A').value); inputs.B=Number($('#S_B').value); }
   }
+  else if(shape==='circle')    inputs={diaVal:Number($('#C_dia').value)};
+  else if(shape==='spiral')    inputs={diaVal:Number($('#SP_dia').value),pitch:Number($('#SP_pitch').value),turns:Number($('#SP_turns').value)};
+  else if(shape==='crank')     inputs={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value)};
+  else if(shape==='chair')     inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)};
+  else if(shape==='hook-semi') inputs={len:Number($('#HS_len').value),ends:$('#HS_ends').value};
+  else if(shape==='hook-L')    inputs={len:Number($('#HL_len').value),ends:$('#HL_ends').value};
+  else if(shape==='custom')    inputs={items:customItems.filter(x=>x.type!=='deleted'),calc:$('#customCalc').value.trim()};
 
-  if(!isFinite(cl)||cl<=0){ if(window._showFeedback) window._showFeedback('⚠ Check dimensions — CL must be > 0','err'); else alert('Please provide valid dimensions. Cutting length must be > 0.'); return; }
+  // …then derive CL, CL working and the label via the shared helpers.
+  const a = shapeArgs(shape, inputs, dia);
+  const cl = CL[shape](a);
+  let clCalc = CLcalc[shape](a);
+  if(shape==='custom' && inputs.calc) clCalc = inputs.calc;
+  const shapeLabel = shapeLabelFor(shape, inputs);
+
+  if(!isFinite(cl)||cl<=0){ feedback('⚠ Check dimensions — CL must be > 0','err'); return; }
 
   // Extra / lap length is reported in its own column and added once per row to the
   // total — it is NOT folded into the per-bar cutting length (CL/Bar stays pure).
   const extraLen=Number($('#extraLen').value)||0;
 
   const qty=computeQty(qtyMode,{qty:Number($('#qty').value),spacing:Number($('#spacing').value),span:Number($('#span').value),offsetStart:Number($('#offsetStart').value),offsetEnd:Number($('#offsetEnd').value)});
-  if(qty<=0){ if(window._showFeedback) window._showFeedback('⚠ Quantity is zero — check spacing/span','err'); else alert('Quantity is zero. Check inputs or spacing.'); return; }
+  if(qty<=0){ feedback('⚠ Quantity is zero — check spacing/span','err'); return; }
 
   const wtPerM=unitWeightKgPerM(dia), totalLenM=(cl*qty+extraLen)/1000, totalWtKg=wtPerM*totalLenM;
 
@@ -538,55 +575,17 @@ $('#barForm').addEventListener('submit', e=>{
     shapeVec: currentShapeVec||null,
     shapeHist: currentShapeHist||null,
     shapeImg: currentShapeImg||null,
-    inputs:{}
+    inputs, extraLen
   };
-
-  // Save raw inputs for edit
-  row.extraLen=extraLen;
-  if(shape==='straight'){ row.inputs={len:Number($('#straightLen').value)}; }
-  else if(shape==='L'){ row.inputs={A:Number($('#L_A').value),B:Number($('#L_B').value),angle:Number($('#L_angle').value)}; }
-  else if(shape==='U'){ row.inputs={A:Number($('#U_A').value),B:Number($('#U_B').value),C:Number($('#U_C').value)}; }
-  else if(shape==='stirrup'){
-    const type=$('#S_type').value, cover=Number($('#S_cover').value), angle=Number($('#S_angle').value);
-    row.inputs={type,cover,angle};
-    if(type==='circle'){ row.inputs.diaCirc=Number($('#S_diaCirc').value); }
-    else{ row.inputs.A=Number($('#S_A').value); row.inputs.B=Number($('#S_B').value); }
-  }
-  else if(shape==='circle'){ row.inputs={diaVal:Number($('#C_dia').value)}; }
-  else if(shape==='spiral'){ row.inputs={diaVal:Number($('#SP_dia').value),pitch:Number($('#SP_pitch').value),turns:Number($('#SP_turns').value)}; }
-  else if(shape==='crank'){  row.inputs={span:Number($('#CR_span').value),depth:Number($('#CR_depth').value),angle:Number($('#CR_angle').value)}; }
-  else if(shape==='chair'){     row.inputs={height:Number($('#CH_height').value),top:Number($('#CH_top').value),base:Number($('#CH_base').value)}; }
-  else if(shape==='hook-semi'){ row.inputs={len:Number($('#HS_len').value),ends:$('#HS_ends').value}; }
-  else if(shape==='hook-L'){    row.inputs={len:Number($('#HL_len').value),ends:$('#HL_ends').value}; }
-  else if(shape==='custom'){    row.inputs={items:customItems.filter(x=>x.type!=='deleted'),calc:$('#customCalc').value.trim()}; }
 
   let verb='Added';
   if(editIndex>=0 && editIndex<rows.length){ lastEditedIndex=editIndex; rows[editIndex]=row; verb='Updated'; editIndex=-1; }
   else { rows.push(row); }
   sortRowsByMemberGroup()
-  if (verb === 'Updated') {
-    if (navPersistTimer) { clearTimeout(navPersistTimer); navPersistTimer = null }
-    navPersistTimer = setTimeout(() => {
-      navPersistTimer = null
-      lastEditedIndex = -1
-      updateRecordNav()
-    }, 5000)
-  }
-  const submitBtn=document.querySelector('.submit-btn');
-  if (submitBtn) {
-    submitBtn.textContent = verb === 'Added' ? '✅ Added!' : '✅ Updated!';
-    submitBtn.classList.add('active');
-    submitBtn.disabled = true;
-    if (submitBtnTimer) { clearTimeout(submitBtnTimer); submitBtnTimer = null }
-    submitBtnTimer = setTimeout(() => {
-      submitBtnTimer = null
-      submitBtn.textContent = '➕ Add to Schedule';
-      submitBtn.classList.remove('active');
-      submitBtn.disabled = false;
-    }, 5000);
-  }
+  if (verb === 'Updated') scheduleNavReset();
+  flashSubmitButton(verb);
   persist(); render();
-  if(window._showFeedback) window._showFeedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
+  feedback(`✔ ${verb} ${shapeLabel} · ${fmt0(cl)} mm · ${fmt3(totalWtKg)} kg`,'ok');
   $('#barForm').reset();
   clearShapeUpload();
   showShape('straight'); showQty('manual'); resetCustom(); updateCustomPreview();
@@ -849,22 +848,43 @@ function toCSV(){
 
   return lines.join('\r\n');
 }
-$('#exportCSV').addEventListener('click',()=>{
-  // BOM helps Excel recognise UTF-8
-  const bom = '\uFEFF';
-  const blob = new Blob([bom + toCSV()],{type:'text/csv;charset=utf-8;'});
+/* --- Blob download + safe (≤50 char) export filenames --- */
+function downloadBlob(blob, fileName){
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  // Cap the export name at 50 chars while preserving the .csv extension
-  let csvName = `bbs_${(projectInfo.project||'schedule').replace(/[^a-z0-9]/gi,'_').toLowerCase()}.csv`;
-  if (csvName.length > 50) csvName = csvName.slice(0, 46) + '.csv';
-  a.download = csvName;
-  a.click(); URL.revokeObjectURL(a.href);
+  a.download = fileName;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(a.href); },0);
+}
+function cappedDownloadName(base, ext){
+  const name = base + ext;
+  return name.length > 50 ? name.slice(0, 46) + ext : name;
+}
+
+$('#exportCSV').addEventListener('click',()=>{
+  // BOM helps Excel recognise UTF-8
+  const blob = new Blob(['\uFEFF' + toCSV()],{type:'text/csv;charset=utf-8;'});
+  downloadBlob(blob, cappedDownloadName(`bbs_${(projectInfo.project||'schedule').replace(/[^a-z0-9]/gi,'_').toLowerCase()}`, '.csv'));
 });
 
 /* =========================
    CSV Import  (using Papa Parse)
    ========================= */
+/* Pull "Name of work / agency / reference" values out of the header lines that
+   precede the table rows in an exported CSV. */
+function inferProjectInfo(raw){
+  const info = {};
+  const keyMap = { 'name of work':'project', 'name of agency':'agency', 'reference':'ref' };
+  for (const rawLine of raw.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const m = line.match(/^(name of work|name of agency|reference)\s*,/i);
+    if (!m) continue;
+    const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
+    if (val && val !== '-') info[keyMap[m[1].toLowerCase()]] = val;
+  }
+  return info;
+}
 $('#importCSV').addEventListener('click', () => {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.csv,text/csv';
   inp.onchange = () => {
@@ -892,21 +912,10 @@ $('#importCSV').addEventListener('click', () => {
         };
         const csvCols = cols.map(c => c.trim().toLowerCase().replace(/[−–—]/g, '-'));
         // Infer project info from text lines before the table header
-
-        for (const rawLine of fr.result.split('\n')) {
-          const line = rawLine.trim();
-          if (!line) continue;
-          if (/^name of work/i.test(line)) {
-            const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
-            if (val && val !== '-') projectInfo.project = val;
-          } else if (/^name of agency/i.test(line)) {
-            const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
-            if (val && val !== '-') projectInfo.agency = val;
-          } else if (/^reference/i.test(line)) {
-            const val = line.split(',').slice(1).join(',').replace(/^"|"$/g, '').trim();
-            if (val && val !== '-') projectInfo.ref = val;
-          }
-        }
+        const inferred = inferProjectInfo(fr.result);
+        if (inferred.project) projectInfo.project = inferred.project;
+        if (inferred.agency)  projectInfo.agency  = inferred.agency;
+        if (inferred.ref)     projectInfo.ref     = inferred.ref;
         applyInfoToForm();
         saveInfoToStorage();
         updatePrintMeta();
@@ -1022,11 +1031,7 @@ $('#saveJSON').addEventListener('click',()=>{
   const now = new Date();
   const ts  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}-${String(now.getMinutes()).padStart(2,'0')}`;
   const blob = new Blob([buildExportJSON({version:2,rows,settings,projectInfo})],{type:'application/json'});
-  const a    = document.createElement('a');
-  a.href     = URL.createObjectURL(blob);
-  a.download = `bbs_${ts}.json`;
-  document.body.appendChild(a); a.click();
-  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(a.href); },0);
+  downloadBlob(blob, `bbs_${ts}.json`);
 });
 $('#loadJSON').addEventListener('click',()=>{
   const inp = document.createElement('input'); inp.type='file'; inp.accept='.json,application/json';
@@ -1446,9 +1451,7 @@ $('#printBBS').addEventListener('click', async () => {
 
     const proj = (projectInfo.project || 'BBS').replace(/[^a-zA-Z0-9_-]/g,'_');
     // Cap the export name at 50 chars while preserving the .pdf extension
-    let fileName = `${proj}_BBS.pdf`;
-    if (fileName.length > 50) fileName = fileName.slice(0, 46) + '.pdf';
-    pdf.save(fileName);
+    pdf.save(cappedDownloadName(`${proj}_BBS`, '.pdf'));
   } catch (err) {
     console.error('PDF export failed:', err);
     alert('PDF export failed. See console for details.');
@@ -1472,14 +1475,13 @@ $('#clearAll').addEventListener('click',()=>{
    current settings (useful after changing bend/hook/unit-weight settings).
    ========================= */
 $('#recalcAll').addEventListener('click',()=>{
-  const fb = window._showFeedback || (()=>{});
-  if(!rows.length){ fb('Nothing to recalculate','err'); return; }
+  if(!rows.length){ feedback('Nothing to recalculate','err'); return; }
   let n=0, skipped=0;
   rows.forEach(r=>{ if(recalcRow(r)) n++; else skipped++; });
   persist(); render();
   const tail = skipped ? ` · ${skipped} skipped` : '';
-  if(n) fb(`✔ Recalculated ${n} row${n===1?'':'s'}${tail}`, 'ok');
-  else  fb(`Could not recalculate — ${skipped} row${skipped===1?'':'s'} missing saved inputs`, 'err');
+  if(n) feedback(`✔ Recalculated ${n} row${n===1?'':'s'}${tail}`, 'ok');
+  else  feedback(`Could not recalculate — ${skipped} row${skipped===1?'':'s'} missing saved inputs`, 'err');
 });
 
 /* Drag & Drop row reorder is wired by initDragReorder() in common.js. */

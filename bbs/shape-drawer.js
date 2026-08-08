@@ -2628,6 +2628,15 @@ function computeHistoryBounds(hist = history) {
   return { minX, minY, maxX, maxY };
 }
 
+/* Bounds → padded viewBox: tight bbox plus a padding that scales with size
+   (floor 20 px). Shared by the vector-model builders. */
+function boundsToVb(bounds) {
+  const { minX, minY, maxX, maxY } = bounds;
+  const bw = maxX-minX, bh = maxY-minY;
+  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
+  return [minX-p, minY-p, bw+p*2, bh+p*2];
+}
+
 function exportToPNG() {
   if (!_konvaStage) return '';
   const layer = getKonvaLayer();
@@ -2772,58 +2781,9 @@ function _emitLeader(out, origin, elbow, textPt, label, size, pos) {
 }
 
 function buildVectorModel() {
-  if (!history.length) return null;
-  if (history.some(c => c.type === 'shape')) return null;  // baked diagram → use raster
-  const bounds = computeHistoryBounds();
-  if (!bounds) return null;
-  const { minX, minY, maxX, maxY } = bounds;
-  const bw = maxX-minX, bh = maxY-minY;
-  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
-  const vb = [minX-p, minY-p, bw+p*2, bh+p*2];
-
-  const el = [];
-  for (const cmd of history) {
-    const d = cmd.diam || 16, lw = _barLW(d);
-    if (cmd.type === 'rebar-path') {
-      const pts = cmd.points || [];
-      if (pts.length < 2) continue;
-      if (cmd.bezier) {
-        const n = pts.length, T = 0.2;
-        const ext = cmd.closed ? [...pts, pts[0], pts[1]] : [pts[0], ...pts, pts[n-1]];
-        const segCount = cmd.closed ? n : n-1;
-        const s = [];
-        for (let i = 0; i < segCount; i++) {
-          const P0=ext[i], P1=ext[i+1], P2=ext[i+2], P3=ext[i+3]||ext[i+2];
-          s.push([P1.x+T*(P2.x-P0.x), P1.y+T*(P2.y-P0.y), P2.x-T*(P3.x-P1.x), P2.y-T*(P3.y-P1.y), P2.x, P2.y]);
-        }
-        el.push({ k:'bez', m:[pts[0].x, pts[0].y], s, cl:!!cmd.closed, col:'#000000', lw });
-      } else {
-        el.push({ k:'path', d:pts.map(q => [q.x, q.y]), cl:!!cmd.closed, col:'#000000', lw });
-      }
-    } else if (cmd.type === 'ortho-bar') {
-      const pts = cmd.points || [];
-      if (pts.length < 2) continue;
-      const fillet = cmd.fillet != null ? cmd.fillet : 0;
-      const barPts = cmd.closed ? [...pts, pts[0]] : pts;
-      const { samples } = buildOrthoGeometry(barPts, d, fillet);
-      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#000000', lw });
-    } else if (cmd.type === 'rect') {
-      const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
-      el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#000000', lw });
-    } else if (cmd.type === 'circle') {
-      el.push({ k:'ell', cx:cmd.cx, cy:cmd.cy, rx:cmd.rx, ry:cmd.ry, col:'#000000', lw });
-    } else if (cmd.type === 'text') {
-      el.push({ k:'text', x:cmd.x, y:cmd.y + (cmd.size||13)*PT_TO_PX*0.5, t:cmd.text||'', sz: cmd.size||13, col:DIM_GRAY, anchor:'l' });
-    } else if (cmd.type === 'dim-aligned') {
-      _emitAligned(el, cmd.p1, cmd.p2, cmd.offset, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
-    } else if (cmd.type === 'dim-angular') {
-      _emitAngular(el, cmd.vertex, cmd.ptA, cmd.ptB, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
-    } else if (cmd.type === 'dim-leader') {
-      _emitLeader(el, cmd.origin, cmd.elbow, cmd.textPt||null, cmd.label||'', (cmd.size||DIM_BASE_PT)*PT_TO_PX, cmd.pos);
-    }
-  }
-  if (!el.length) return null;
-  return { vb, el };
+  // Delegates to buildVectorModelFrom() — the bodies are identical apart from
+  // reading the module's live `history` rather than a caller-supplied array.
+  return buildVectorModelFrom(history);
 }
 
 /* ── TEXTURED vector model ──
@@ -2925,10 +2885,7 @@ function buildTexturedModel(hist) {
   if (hist.some(c => c.type === 'shape')) return null;
   const bounds = computeHistoryBounds(hist);
   if (!bounds) return null;
-  const { minX, minY, maxX, maxY } = bounds;
-  const bw = maxX-minX, bh = maxY-minY;
-  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
-  const vb = [minX-p, minY-p, bw+p*2, bh+p*2];
+  const vb = boundsToVb(bounds);
 
   const el = [];
   for (const cmd of hist) {
@@ -2959,10 +2916,8 @@ function buildVectorModelFrom(hist) {
   if (hist.some(c => c.type === 'shape')) return null;
   const bounds = computeHistoryBounds(hist);
   if (!bounds) return null;
-  const { minX, minY, maxX, maxY } = bounds;
-  const bw = maxX-minX, bh = maxY-minY;
-  const p = Math.max(20, Math.round(Math.max(bw, bh) * 0.08));
-  const vb = [minX-p, minY-p, bw+p*2, bh+p*2];
+  const vb = boundsToVb(bounds);
+
   const el = [];
   for (const cmd of hist) {
     const d = cmd.diam || 16, lw = _barLW(d);

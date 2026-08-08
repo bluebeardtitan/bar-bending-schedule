@@ -1,5 +1,5 @@
 /* =========================
-   Common utilities shared between BBS and CFS pages
+   Common utilities for the BBS page
    ========================= */
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
@@ -120,7 +120,7 @@ function clampPage() {
 }
 
 /* =========================================================================
-   Shared chrome for the BBS and CFS pages. Each page supplies its own
+   Shared chrome for the BBS page. The page supplies its own
    `rows`, `render`, `persist`, `navRecord`, `resetSettings`, `searchTerm`,
    `currentPage`, `pageSize` globals; the helpers below reference them by
    name at event time, so they resolve against whichever page is loaded.
@@ -185,7 +185,7 @@ function makeSettings(key, defaults) {
   };
 }
 
-/* ---- Sort rows by member group then mark (shared between BBS and CFS) ---- */
+/* ---- Sort rows by member group then mark ---- */
 function sortRowsByMemberGroup() {
   const groups = [], memberOrder = [];
   for (const r of rows) {
