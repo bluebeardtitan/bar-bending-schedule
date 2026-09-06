@@ -110,13 +110,13 @@ function buildFilletGeometry(points, diam, closed) {
     const d1 = segLen[i];
     const u1x = (P1.x - pts[i].x) / d1, u1y = (P1.y - pts[i].y) / d1;
 
-    if (i === total - 1) {
+    if (i === total - 1 && !closed) {
       path.lineTo(P1.x, P1.y);
       sampleLine(curX, curY, P1.x, P1.y, u1x, u1y);
       break;
     }
 
-    const P2  = pts[i + 2];
+    const P2  = (closed && i === total - 1) ? pts[1] : pts[i + 2];
     const d2  = segLen[i+1];
     const u2x = (P2.x - P1.x) / d2, u2y = (P2.y - P1.y) / d2;
 
@@ -233,11 +233,14 @@ function strokeRebarPath(ctx, path, samples, diam, cfg) {
 
   ctx.strokeStyle = GRAY.body; ctx.lineWidth = d; ctx.stroke(path);
 
-  ctx.strokeStyle   = GRAY.hi; ctx.lineWidth = d * 0.28;
-  ctx.shadowColor   = GRAY.hi; ctx.shadowOffsetX = 0;
-  ctx.shadowOffsetY = -d * 0.32; ctx.shadowBlur = 0;
-  ctx.stroke(path);
-  ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
+  /* Highlight + shadow only for textured styles with visible ribs */
+  if (cfg.ribSpacing > 0) {
+    ctx.strokeStyle   = GRAY.hi; ctx.lineWidth = d * 0.28;
+    ctx.shadowColor   = GRAY.hi; ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = -d * 0.32; ctx.shadowBlur = 0;
+    ctx.stroke(path);
+    ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
+  }
 
   if (cfg.ribSpacing > 0 && d >= 5) drawRibsAlongSamples(ctx, samples, d, cfg);
 
@@ -294,6 +297,9 @@ function buildOrthoGeometry(points, diam, filletR) {
   const path = new Path2D();
   const samples = [];
 
+  /* Detect closed path: first ≈ last point → compute fillet at junction */
+  const _isClosed = n > 2 && Math.hypot(points[0].x - points[n-1].x, points[0].y - points[n-1].y) < 0.001;
+
   /* segment lengths for radius clamping */
   const segLen = [];
   for (let i = 0; i < n - 1; i++)
@@ -340,14 +346,14 @@ function buildOrthoGeometry(points, diam, filletR) {
     const d1  = segLen[i];
     const u1x = (P1.x - P0.x) / d1, u1y = (P1.y - P0.y) / d1;
 
-    if (i === n - 2) {
+    if (i === n - 2 && !_isClosed) {
       /* last segment straight to end, no arc after */
       path.lineTo(P1.x, P1.y);
       sampleLineTo(curX, curY, P1.x, P1.y, u1x, u1y);
       break;
     }
 
-    const P2 = points[i + 2];
+    const P2 = (_isClosed && i === n - 2) ? points[1] : points[i + 2];
     const r  = Math.min(R, segLen[i] / 2, segLen[i+1] / 2);
 
     const d2  = segLen[i+1];
@@ -407,16 +413,18 @@ function makeOrthoRebarGroup(points, diam, closed) {
       c.lineWidth   = d;
       c.stroke(path);
 
-      /* 2 highlight */
-      c.strokeStyle   = GRAY.hi;
-      c.lineWidth     = d * 0.28;
-      c.shadowColor   = GRAY.hi;
-      c.shadowOffsetX = 0;
-      c.shadowOffsetY = -d * 0.32;
-      c.shadowBlur    = 0;
-      c.stroke(path);
-      c.shadowColor   = 'transparent';
-      c.shadowOffsetY = 0;
+      /* 2 highlight + shadow — only for textured styles with visible ribs */
+      if (cfg.ribSpacing > 0) {
+        c.strokeStyle   = GRAY.hi;
+        c.lineWidth     = d * 0.28;
+        c.shadowColor   = GRAY.hi;
+        c.shadowOffsetX = 0;
+        c.shadowOffsetY = -d * 0.32;
+        c.shadowBlur    = 0;
+        c.stroke(path);
+        c.shadowColor   = 'transparent';
+        c.shadowOffsetY = 0;
+      }
 
       /* 3 ribs */
       if (cfg.ribSpacing > 0 && d >= 5) drawRibsAlongSamples(c, samples, d, cfg);
@@ -503,7 +511,7 @@ function drawRibsAlongSamples(ctx, samples, diam, cfg) {
    All three share strokeRebarPath — geometry differs.
    ===================================================== */
 function _ctx2dCfg() {
-  const style = window._drawerActiveStyle || 'tor';
+  const style = window._drawerActiveStyle || 'none';
   return REBAR_STYLES.find(s => s.id === style) || REBAR_STYLES[0];
 }
 
@@ -573,7 +581,7 @@ function drawShapeDiagram(ctx, shapeName, diam, W, H) {
 
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle=GRAY.bg; ctx.fillRect(0,0,W,H);
-  window._drawerActiveStyle = window._drawerActiveStyle || 'tor';
+  window._drawerActiveStyle = window._drawerActiveStyle || 'none';
 
   const lib=window.SHAPE_LIB||{};
   const def=lib[shapeName];
@@ -764,13 +772,14 @@ function drawDimAligned(ctx, p1, p2, offset, label, size, pos) {
 
   // Extension lines (slightly past the dim line)
   const ext = 6;
+  const baseOff = off > 1 ? 3 : 0;
   ctx.setLineDash([]);
   ctx.beginPath();
-  ctx.moveTo(p1.x + nx*(off > 0 ? 3 : off-ext), p1.y + ny*(off > 0 ? 3 : off-ext));
+  ctx.moveTo(p1.x + nx*baseOff, p1.y + ny*baseOff);
   ctx.lineTo(d1.x + nx*ext, d1.y + ny*ext);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(p2.x + nx*(off > 0 ? 3 : off-ext), p2.y + ny*(off > 0 ? 3 : off-ext));
+  ctx.moveTo(p2.x + nx*baseOff, p2.y + ny*baseOff);
   ctx.lineTo(d2.x + nx*ext, d2.y + ny*ext);
   ctx.stroke();
 
@@ -1161,7 +1170,7 @@ let _lastDownPt   = null;
 const DBL_MS   = 350;   // max ms between clicks to count as double
 const DBL_PX   = 12;    // max pixel drift between the two clicks
 
-window._drawerActiveStyle = 'tor';
+window._drawerActiveStyle = 'none';
 
 /* ── Konva stage dimensions ── */
 let _stageW = 700, _stageH = 460;
@@ -2238,7 +2247,7 @@ function initDrawer() {
     document.addEventListener('mouseup',   _bar._onmouseup);
   }
 
-  setTool('rebar-path'); setStyle('tor');
+  setTool('rebar-path'); setStyle('none');
 }
 
 /* Responsive layout for phones/tablets: stack the toolbar under a full-width
@@ -2466,15 +2475,35 @@ async function loadShapeLibrary() {
   let list=[];
   try{
     const res=await fetch('bbs/shapes.json',{cache:'no-cache'});
-    if(res.ok){const data=await res.json();const fl=(data.shapes||[]).filter(s=>s&&s.id);if(fl.length)list=fl;}
+    if(res.ok){
+      const data=await res.json();
+      const fl=(data.shapes||[]).filter(s=>{
+        if(!s||!s.id) return false;
+        if(s.generator||s.iso) return true;  // parametric/isometric shapes skip segment validation
+        if(!Array.isArray(s.segments)||!s.segments.length) return false;
+        return s.segments.every(seg=>{
+          if(!Array.isArray(seg.pts)||seg.pts.length<2) return false;
+          return seg.pts.every(p=>Array.isArray(p)&&p.length>=2&&isFinite(p[0])&&isFinite(p[1]));
+        });
+      });
+      if(fl.length) list=fl;
+    }
   }catch(err){console.info('shapes.json not auto-fetched (using built-in fallback).');}
-  if(!list.length)list=[{id:'straight',label:'Straight',group:'quick',segments:[{pts:[[0,0.5],[1,0.5]],style:'straight'}],dims:[{from:[0,0.5],to:[1,0.5],label:'A',off:[0,-24]}]}];
+  if(!list.length)list=[{id:'straight',label:'Straight',group:'quick',segments:[{pts:[[0,0.5],[1,0.5]],style:'straight'}]}];
   window.SHAPE_LIB_LIST=list; window.SHAPE_LIB={};
   list.forEach(s=>{window.SHAPE_LIB[s.id]=s;});
 }
 
 function applyShapeList(list,sourceLabel){
-  const clean=(list||[]).filter(s=>s&&s.id);
+  const clean=(list||[]).filter(s=>{
+    if(!s||!s.id) return false;
+    if(s.generator||s.iso) return true;
+    if(!Array.isArray(s.segments)||!s.segments.length) return false;
+    return s.segments.every(seg=>{
+      if(!Array.isArray(seg.pts)||seg.pts.length<2) return false;
+      return seg.pts.every(p=>Array.isArray(p)&&p.length>=2&&isFinite(p[0])&&isFinite(p[1]));
+    });
+  });
   if(!clean.length){alert('No valid shapes found in '+(sourceLabel||'file')+'.');return false;}
   // Merge into existing library: update matching IDs, append new ones
   const merged=[...(window.SHAPE_LIB_LIST||[])];
@@ -2611,7 +2640,7 @@ function computeHistoryBounds(hist = history) {
       const fsPx=(cmd.size||13)*PT_TO_PX;
       grow(cmd.x-4,cmd.y-4); grow(cmd.x+(cmd.text||'').length*fsPx*0.65+8,cmd.y+fsPx*1.6+4);
     } else if (cmd.type==='dim-aligned') {
-      const off=Math.abs(cmd.offset||28);
+      const off=cmd.offset!=null ? Math.abs(cmd.offset) : 28;
       const dx=cmd.p2.x-cmd.p1.x, dy=cmd.p2.y-cmd.p1.y;
       const len=Math.hypot(dx,dy)||1, nx=-dy/len, ny=dx/len;
       const sign=cmd.offset<0?-1:1;
@@ -2619,7 +2648,10 @@ function computeHistoryBounds(hist = history) {
       const mx=(cmd.p1.x+cmd.p2.x)/2+nx*sign*off, my=(cmd.p1.y+cmd.p2.y)/2+ny*sign*off;
       pad(mx,my,50);
     } else if (cmd.type==='dim-angular') {
-      [cmd.vertex,cmd.ptA,cmd.ptB].filter(Boolean).forEach(p=>pad(p.x,p.y,70));
+      const rA = Math.hypot((cmd.ptA||{}).x-(cmd.vertex||{}).x, (cmd.ptA||{}).y-(cmd.vertex||{}).y);
+      const rB = Math.hypot((cmd.ptB||{}).x-(cmd.vertex||{}).x, (cmd.ptB||{}).y-(cmd.vertex||{}).y);
+      const arcR = Math.min(rA||60, rB||60, 60) * 0.72 + 30;
+      [cmd.vertex,cmd.ptA,cmd.ptB].filter(Boolean).forEach(p=>pad(p.x,p.y,arcR));
     } else if (cmd.type==='dim-leader') {
       [cmd.origin,cmd.elbow,cmd.textPt].filter(Boolean).forEach(p=>pad(p.x,p.y,70));
     }
@@ -2729,7 +2761,7 @@ function _emitAligned(out, p1, p2, offset, label, size, pos) {
   const ax = dx/len, ay = dy/len, nx = -ay, ny = ax;
   const off = offset != null ? offset : 30;
   const d1 = { x:p1.x+nx*off, y:p1.y+ny*off }, d2 = { x:p2.x+nx*off, y:p2.y+ny*off };
-  const ext = 6, base = off > 0 ? 3 : off - ext;
+  const ext = 6, base = off > 1 ? 3 : 0;
   out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[p1.x+nx*base, p1.y+ny*base], b:[d1.x+nx*ext, d1.y+ny*ext] });
   out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[p2.x+nx*base, p2.y+ny*base], b:[d2.x+nx*ext, d2.y+ny*ext] });
   out.push({ k:'line', col:DIM_GRAY, lw:1.2, a:[d1.x, d1.y], b:[d2.x, d2.y] });
@@ -2856,8 +2888,10 @@ function _emitTexturedBar(el, samples, diam, styleId, closed) {
   /* No-texture style: a single flat centreline, no body/sheen/ribs. */
   if (cfg.line) { el.push({ k:'path', d:line, cl:closed, col:'#000000', lw:_barLW(d) }); return; }
   el.push({ k:'path', d:line, cl:closed, col:GRAY.body, lw:d });                                  // body
-  el.push({ k:'path', d:simp.map(s => [rnd(s.x), rnd(s.y - d*0.32)]), cl:closed, col:GRAY.hi, lw:d*0.28 }); // sheen
-  if (cfg.ribSpacing > 0 && d >= 5) _emitRibs(el, samples, d, cfg);                                // ribs
+  if (cfg.ribSpacing > 0) {
+    el.push({ k:'path', d:simp.map(s => [rnd(s.x), rnd(s.y - d*0.32)]), cl:closed, col:GRAY.hi, lw:d*0.28 }); // sheen
+    if (d >= 5) _emitRibs(el, samples, d, cfg);                                                     // ribs
+  }
   el.push({ k:'path', d:line, cl:closed, col:GRAY.edge, lw:0.8 });                                 // outline
 }
 
@@ -2943,7 +2977,7 @@ function buildVectorModelFrom(hist) {
       const fillet = cmd.fillet != null ? cmd.fillet : 0;
       const barPts = cmd.closed ? [...pts, pts[0]] : pts;
       const { samples } = buildOrthoGeometry(barPts, d, fillet);
-      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: false, col:'#000000', lw });
+      el.push({ k:'path', d: _simplify(samples, 0.3).map(s => [s.x, s.y]), cl: !!cmd.closed, col:'#000000', lw });
     } else if (cmd.type === 'rect') {
       const x = Math.min(cmd.x, cmd.x+cmd.w), y = Math.min(cmd.y, cmd.y+cmd.h);
       el.push({ k:'rect', x, y, w:Math.abs(cmd.w), h:Math.abs(cmd.h), col:'#000000', lw });
