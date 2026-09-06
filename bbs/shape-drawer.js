@@ -117,7 +117,9 @@ function buildFilletGeometry(points, diam, closed) {
     }
 
     const P2  = (closed && i === total - 1) ? pts[1] : pts[i + 2];
-    const d2  = segLen[i+1];
+    /* When closing, the segment that follows P1 wraps back to pts[1], whose
+       length is segLen[0] — segLen[i+1] would be out of bounds (undefined→NaN). */
+    const d2  = (closed && i === total - 1) ? segLen[0] : segLen[i+1];
     const u2x = (P2.x - P1.x) / d2, u2y = (P2.y - P1.y) / d2;
 
     const dot   = u1x * u2x + u1y * u2y;
@@ -138,7 +140,7 @@ function buildFilletGeometry(points, diam, closed) {
     const halfTan = Math.tan(defl / 2);
     let R2    = R;
     let tDist = R2 * halfTan;
-    const maxT = Math.min(segLen[i], segLen[i+1]) / 2;
+    const maxT = Math.min(segLen[i], (closed && i === total - 1) ? segLen[0] : segLen[i+1]) / 2;
     if (tDist > maxT) { tDist = maxT; R2 = tDist / halfTan; }
 
     const T1 = { x: P1.x - u1x * tDist, y: P1.y - u1y * tDist };
@@ -355,9 +357,11 @@ function buildOrthoGeometry(points, diam, filletR) {
     }
 
     const P2 = (_isClosed && i === n - 2) ? points[1] : points[i + 2];
-    const r  = Math.min(R, segLen[i] / 2, segLen[i+1] / 2);
+    /* When closing, the segment that follows P1 wraps back to points[1], whose
+       length is segLen[0] — segLen[i+1] would be out of bounds (undefined→NaN). */
+    const r  = Math.min(R, segLen[i] / 2, ((_isClosed && i === n - 2) ? segLen[0] : segLen[i+1]) / 2);
 
-    const d2  = segLen[i+1];
+    const d2  = (_isClosed && i === n - 2) ? segLen[0] : segLen[i+1];
     const u2x = (P2.x - P1.x) / d2, u2y = (P2.y - P1.y) / d2;
     const T1  = { x: P1.x - u1x * r, y: P1.y - u1y * r };
     const T2  = { x: P1.x + u2x * r, y: P1.y + u2y * r };
