@@ -1502,6 +1502,7 @@ function clearShapeUpload(){
   $('#shapeClearBtn').style.display='none';
 }
 $('#shapeUploadBtn').addEventListener('click',()=>$('#shapeFile').click());
+let _shapeUploadGen=0;
 $('#shapeFile').addEventListener('change',()=>{
   const file=$('#shapeFile').files[0]; if(!file) return;
   if(!['image/jpeg','image/png','image/svg+xml'].includes(file.type)){
@@ -1509,10 +1510,13 @@ $('#shapeFile').addEventListener('change',()=>{
     $('#shapeFile').value=''; return;
   }
   const reader=new FileReader();
+  const gen=++_shapeUploadGen;
   reader.onload=async ev=>{
     // Uploads can't be vectorized — downscale/compress raster to keep files small.
     const raw = ev.target.result;
-    currentShapeImg = window.ShapeVector ? await ShapeVector.downscale(raw) : raw;
+    const img = window.ShapeVector ? await ShapeVector.downscale(raw) : raw;
+    if (gen !== _shapeUploadGen) return; // stale — a newer file was chosen
+    currentShapeImg = img;
     currentShapeVec = null;
     $('#shapePreview').src=currentShapeImg;
     $('#shapePreview').style.display='block';

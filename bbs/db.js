@@ -14,7 +14,7 @@
         if (!e.target.result.objectStoreNames.contains('kv')) e.target.result.createObjectStore('kv');
       };
       req.onsuccess = e => resolve(e.target.result);
-      req.onerror   = () => reject(req.error);
+      req.onerror   = () => { _ready = null; reject(req.error); };
     });
     return _ready;
   }

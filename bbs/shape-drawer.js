@@ -344,6 +344,7 @@ function buildOrthoGeometry(points, diam, filletR) {
     const P0  = points[i];
     const P1  = points[i + 1];
     const d1  = segLen[i];
+    if (d1 < 0.001) continue;  // degenerate — skip zero-length segment
     const u1x = (P1.x - P0.x) / d1, u1y = (P1.y - P0.y) / d1;
 
     if (i === n - 2 && !_isClosed) {
@@ -3032,8 +3033,12 @@ window.ShapeDrawer = {
     };
     document.getElementById('drawerCancel').onclick=()=>{
       cancelPath(); dlg.close();
+    };
+    /* Clean up on any close path (button clicks, Escape, or programmatic).
+       The dialog's 'close' event fires exactly once per close. */
+    dlg.addEventListener('close', ()=>{
       document.removeEventListener('keydown',onKeyDown);
       if(_stageResizeObserver){_stageResizeObserver.disconnect();_stageResizeObserver=null;}
-    };
+    }, { once:true });
   }
 };
