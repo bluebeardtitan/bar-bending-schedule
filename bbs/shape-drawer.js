@@ -1124,6 +1124,7 @@ let livePts        = [];
 let mousePos       = null;
 let bezierMode     = false;   // current pen mode: true = upcoming segments curve
 let segStyles      = [];      // style of each placed segment i (livePts[i]→livePts[i+1]): 'curve' | 'straight'
+let _escBlockedClose = false; // Escape consumed stroke state; block dialog cancel
 
 /* Group a point list + parallel per-segment style array into runs of consecutive
    same-style segments. pts.length === styles.length + 1. Adjacent runs share their
@@ -1994,6 +1995,9 @@ function onUp(e) {
 
 function onKeyDown(e) {
   if(e.key==='Escape'){
+    /* Remember that this Escape consumed active drawing state, so the dialog's
+       native cancel (fires AFTER keydown) must not close the modal yet. */
+    if(isDrawing||dimPhase>0||dragStart||editDragging) _escBlockedClose=true;
     if(isDrawing)cancelPath();
     if(dimPhase>0){dimPhase=0;dimPts=[];dimOrtho=false;redraw();}
     dragStart=null;
@@ -2469,6 +2473,18 @@ function ensureDrawerModal() {
   }
   if(!document.getElementById('shapeDrawerDlg'))
     document.body.insertAdjacentHTML('beforeend',drawerHTML);
+  const dlg0=document.getElementById('shapeDrawerDlg');
+  if(!dlg0.dataset.cancelWired){
+    /* The native <dialog> closes itself on Escape, discarding unsaved history.
+       While actively drawing/editing, swallow the cancel so the first Escape
+       only aborts the stroke; the modal closes only when the canvas is idle. */
+    dlg0.addEventListener('cancel', e=>{
+      /* Set by onKeyDown when this Escape just aborted an in-progress stroke;
+         fired BEFORE the cancel event, so block the native close. */
+      if(_escBlockedClose){ e.preventDefault(); _escBlockedClose=false; }
+    });
+    dlg0.dataset.cancelWired='1';
+  }
 }
 
 /* ── Shape library ── */
